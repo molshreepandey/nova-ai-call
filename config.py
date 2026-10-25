@@ -52,12 +52,16 @@ class Settings:
     """Immutable application settings resolved from the environment."""
 
     groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
-    llm_model: str = field(default_factory=lambda: os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"))
+    llm_model: str = field(default_factory=lambda: os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"))
+    # Empty = model default. Qwen with "none" skips tools and hallucinates, so it is not
+    # the default; "low" is a reasonable choice for openai/gpt-oss-* models.
+    reasoning_effort: str = field(default_factory=lambda: os.getenv("GROQ_REASONING_EFFORT", ""))
     stt_model: str = field(default_factory=lambda: os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo"))
     tts_voice: str = field(default_factory=lambda: os.getenv("TTS_VOICE", "en-US-AriaNeural"))
     embedding_model: str = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2"))
     collection_name: str = "novatech_kb"
     max_tool_iterations: int = field(default_factory=lambda: _int_env("MAX_TOOL_ITERATIONS", 5))
+    max_history_turns: int = field(default_factory=lambda: _int_env("MAX_HISTORY_TURNS", 8))
     rag_top_k: int = field(default_factory=lambda: _int_env("RAG_TOP_K", 4))
     sample_rate: int = field(default_factory=lambda: _int_env("RECORD_SAMPLE_RATE", 16000))
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").upper())
@@ -93,7 +97,7 @@ def setup_logging(level: str | None = None) -> None:
     root.addHandler(file_handler)
 
     # Third-party libraries are chatty at INFO.
-    noisy = ("httpx", "httpcore", "chromadb", "sentence_transformers", "mcp", "urllib3")
+    noisy = ("httpx", "httpx2", "httpcore", "chromadb", "sentence_transformers", "mcp", "urllib3")
     for name in noisy:
         logging.getLogger(name).setLevel(logging.WARNING)
     for name in ("huggingface_hub", "transformers", "filelock", "torch.distributed.elastic"):

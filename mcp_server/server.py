@@ -74,10 +74,8 @@ async def get_weather(city: str) -> dict[str, Any]:
 def calculate(expression: str) -> dict[str, Any]:
     """Safely evaluate a math expression.
 
-    Supports + - * / // % ** (or ^), parentheses, constants pi/e/tau and functions
-    sqrt, sin, cos, tan, asin, acos, atan, log (natural, or log(x, base)), log10,
-    log2, exp, abs, round, floor, ceil, factorial, radians, degrees.
-    Trig functions use radians. For differences between dates use days_between.
+    Supports + - * / % ** (or ^), parentheses, pi, e and sqrt, sin, cos, tan, log,
+    log10, exp, abs, round, floor, ceil, factorial (trig in radians).
 
     Args:
         expression: The expression, e.g. "sqrt(1764) * 3.5".

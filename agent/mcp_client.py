@@ -6,6 +6,7 @@ OpenAI/Groq function-calling format, so they are never duplicated by hand.
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from contextlib import AsyncExitStack
@@ -32,6 +33,14 @@ def _strip_titles(schema: Any) -> Any:
     if isinstance(schema, list):
         return [_strip_titles(v) for v in schema]
     return schema
+
+
+def _compact_json(text: str) -> str:
+    """Re-serialise pretty-printed JSON tool output compactly to save LLM tokens."""
+    try:
+        return json.dumps(json.loads(text), ensure_ascii=False, separators=(",", ":"))
+    except json.JSONDecodeError:
+        return text
 
 
 def mcp_tool_to_openai(tool: Tool) -> dict[str, Any]:
@@ -113,4 +122,4 @@ class MCPClient:
         text = "\n".join(c.text for c in result.content if isinstance(c, TextContent))
         if result.isError:
             raise MCPToolError(text or f"tool {name} failed")
-        return text
+        return _compact_json(text)
