@@ -21,12 +21,6 @@ Nova: I can only help with NovaWealth and investment questions, ...
 
 > NovaWealth, its funds and all figures are fictional, created for this demo.
 
-## Demo
-
-> 📹 _Demo video / GIF goes here_ (e.g. `docs/demo.gif`)
->
-> 🖼️ _Screenshot of a call goes here_ (e.g. `docs/screenshot.png`)
-
 ## Contents
 
 - [Features](#features)
