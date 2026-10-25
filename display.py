@@ -19,7 +19,7 @@ def show_banner(model: str, tools: list[str], mode: str) -> None:
     """Print the startup banner."""
     console.print(
         Panel.fit(
-            f"[bold]NovaTech Voice Agent[/]  ·  mode: [cyan]{mode}[/]  ·  model: [cyan]{model}[/]\n"
+            f"[bold]NovaWealth Voice Agent[/]  ·  mode: [cyan]{mode}[/]  ·  model: [cyan]{model}[/]\n"
             f"tools: {', '.join(tools)}\n"
             "[dim]Say or type 'goodbye' / 'end call' to hang up.[/]",
             border_style="blue",

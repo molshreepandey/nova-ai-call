@@ -1,7 +1,7 @@
 [project]
-name = "novatech-voice-agent"
+name = "novawealth-voice-agent"
 version = "1.0.0"
-description = "Voice-activated support agent with RAG and MCP tools"
+description = "Bilingual voice investor-support agent with RAG and MCP tools"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]

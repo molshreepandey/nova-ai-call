@@ -135,7 +135,8 @@ def ingest(docs_dir: Path = DOCS_DIR, rebuild: bool = False) -> int:
     """Embed every ``*.md`` file in ``docs_dir`` into Chroma. Returns the collection size.
 
     Idempotent: each document's existing chunks are deleted before its new chunks
-    are added, so re-running never duplicates and edited docs never leave stale chunks.
+    are added, and chunks of deleted documents are removed, so re-running never
+    duplicates and the store always mirrors ``docs_dir``.
     """
     paths = sorted(docs_dir.glob("*.md"))
     if not paths:
@@ -143,6 +144,13 @@ def ingest(docs_dir: Path = DOCS_DIR, rebuild: bool = False) -> int:
 
     collection = get_collection(CHROMA_DIR, settings.collection_name, reset=rebuild)
     embedder = Embedder(settings.embedding_model)
+
+    # Drop chunks of documents that were deleted or renamed since the last run.
+    current = {p.name for p in paths}
+    stored = {str(m["source"]) for m in collection.get(include=["metadatas"])["metadatas"] or []}
+    for stale in sorted(stored - current):
+        collection.delete(where={"source": stale})
+        logger.info("[INGEST] removed stale document %s", stale)
 
     for path in paths:
         chunks = chunk_document(path)
@@ -162,7 +170,7 @@ def ingest(docs_dir: Path = DOCS_DIR, rebuild: bool = False) -> int:
 
 def main() -> None:
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description="Ingest NovaTech docs into ChromaDB.")
+    parser = argparse.ArgumentParser(description="Ingest NovaWealth docs into ChromaDB.")
     parser.add_argument("--rebuild", action="store_true", help="drop and rebuild the collection")
     args = parser.parse_args()
     setup_logging()

@@ -1,4 +1,4 @@
-"""NovaTech system-tools MCP server (FastMCP, stdio transport).
+"""NovaWealth system-tools MCP server (FastMCP, stdio transport).
 
 The agent spawns this as a subprocess and talks MCP over stdin/stdout, so this
 process must never print to stdout. Logs go to logs/mcp_server.log.
@@ -19,7 +19,7 @@ from mcp.server.fastmcp import FastMCP
 
 from config import LOG_DIR, LOG_FILE
 from mcp_server.calculator import safe_eval
-from mcp_server.weather import fetch_current_weather
+from mcp_server.finance import format_inr, market_status, project_investment
 
 MAX_LOG_LINES = 200
 
@@ -31,7 +31,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("mcp_server")
 
-mcp = FastMCP("novatech-system-tools")
+mcp = FastMCP("novawealth-system-tools")
 
 
 @mcp.tool()
@@ -60,14 +60,45 @@ def get_current_time(timezone: str = "Asia/Kolkata") -> dict[str, Any]:
 
 
 @mcp.tool()
-async def get_weather(city: str) -> dict[str, Any]:
-    """Get the current weather for a city (temperature, conditions, humidity, wind).
+def get_market_status() -> dict[str, str]:
+    """Check whether the Indian stock market (NSE/BSE equity) is open right now,
+    and when it next opens. Based on regular trading hours; holidays not included."""
+    logger.info("get_market_status()")
+    return market_status()
+
+
+@mcp.tool()
+def investment_projection(
+    annual_return_pct: float,
+    years: float,
+    monthly_sip: float = 0,
+    lumpsum: float = 0,
+    annual_step_up_pct: float = 0,
+) -> dict[str, Any]:
+    """Illustrative future value of a monthly SIP and/or a one-time lump sum in rupees,
+    at an ASSUMED constant annual return (not a prediction or guarantee).
 
     Args:
-        city: City name, e.g. "Mumbai" or "London".
+        annual_return_pct: Assumed annual return in percent, e.g. 12.
+        years: Investment period in years (up to 50).
+        monthly_sip: Monthly SIP amount in rupees.
+        lumpsum: One-time investment in rupees.
+        annual_step_up_pct: Yearly percentage increase of the SIP amount (0-50).
     """
-    logger.info("get_weather(%s)", city)
-    return await fetch_current_weather(city)
+    result = project_investment(monthly_sip, lumpsum, annual_return_pct, years, annual_step_up_pct)
+    logger.info("investment_projection(sip=%s, lumpsum=%s, %s%%, %sy) = %s",
+                monthly_sip, lumpsum, annual_return_pct, years, result)
+    return {
+        "assumed_annual_return_pct": annual_return_pct,
+        "years": years,
+        "total_invested_inr": result.total_invested,
+        "estimated_value_inr": result.estimated_value,
+        "estimated_gain_inr": result.estimated_gain,
+        "total_invested_display": format_inr(result.total_invested),
+        "estimated_value_display": format_inr(result.estimated_value),
+        "estimated_gain_display": format_inr(result.estimated_gain),
+        "disclaimer": "Illustrative only; actual returns vary and are not guaranteed.",
+    }
 
 
 @mcp.tool()

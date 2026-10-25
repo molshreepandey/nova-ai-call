@@ -1,29 +1,31 @@
-# NovaTech Voice Agent: Voice-Activated AI Support Agent (RAG + MCP)
+# NovaWealth Voice Agent: Bilingual Investor-Support Voice AI (RAG + MCP)
 
-A simulated phone-support agent for a fictional company, **NovaTech**. You speak a question,
-it is transcribed, and an LLM decides **per question** whether to search the company knowledge
-base (**RAG**), call live system tools on a separate **MCP server**, or both. The agent runs
-the tool-calling loop until it has an answer, then **speaks** the answer and prints it with
-a tool trace and cited sources.
+A hands-free voice assistant for a fictional investment company, **NovaWealth**. Open the page,
+press **Start call** and just talk, in **English or Hindi**. Nova detects real speech (ignoring
+background noise), works out what you need, and answers out loud. Behind each answer, an LLM
+decides whether to search the company knowledge base (**RAG**), call live tools on a separate
+**MCP server** (market hours, SIP projections, date math, calculator), or both. It stays
+strictly on investment topics and never gives personal buy/sell advice.
 
 ```
-You: I bought my X200 on 1st March 2026. Based on today's date, is it still under the standard warranty?
-[ROUTER] iteration 1: LLM chose tool(s): get_current_time, search_knowledge_base
-[MCP]    calling get_current_time({'timezone': 'Asia/Kolkata'})
-[RAG]    'NovaBand X200 standard warranty period' -> warranty_policy.md§Standard Warranty Periods (0.805), ...
-[ROUTER] iteration 2: LLM chose tool(s): days_between
-[MCP]    calling days_between({'start_date': '2026-03-01', 'end_date': '2026-10-25'})
-[ROUTER] final answer after 3 LLM call(s)
-Nova: Yes, it's still covered. Your X200 has a 12-month, or 365-day, standard warranty, and it's
-      been 238 days since you bought it, so you have about 127 days left.
-Sources: warranty_policy.md § Standard Warranty Periods
+Nova: Hello, welcome to NovaWealth. Would you like to talk in English or Hindi? नमस्ते, ...
+You:  Hindi
+Nova: ठीक है, हम हिंदी में बात करेंगे। बताइए, मैं आपके निवेश से जुड़ी किस बात में मदद कर सकती हूँ?
+You:  अगर मैं हर महीने 10,000 रुपये की SIP 10 साल तक करूँ और 12% रिटर्न मानें तो कितना बनेगा?
+      [ROUTER] LLM chose tool(s): investment_projection
+Nova: 10 साल में हर महीने ₹10,000 की SIP, 12% के माने गए रिटर्न पर लगभग ₹23.23 लाख बनती है।
+      कुल निवेश ₹12 लाख होगा। यह सिर्फ एक उदाहरण है, रिटर्न गारंटीड नहीं हैं।
+You:  Who won the cricket match yesterday?
+Nova: I can only help with NovaWealth and investment questions, ...
 ```
+
+> NovaWealth, its funds and all figures are fictional, created for this demo.
 
 ## Demo
 
 > 📹 _Demo video / GIF goes here_ (e.g. `docs/demo.gif`)
 >
-> 🖼️ _Screenshot of a call in the terminal goes here_ (e.g. `docs/screenshot.png`)
+> 🖼️ _Screenshot of a call goes here_ (e.g. `docs/screenshot.png`)
 
 ## Contents
 
@@ -31,7 +33,7 @@ Sources: warranty_policy.md § Standard Warranty Periods
 - [High-level design](#high-level-design)
 - [Architecture](#architecture)
 - [Design decisions and trade-offs](#design-decisions-and-trade-offs)
-- [Setup](#setup) ([macOS / Linux](#macos--linux) · [Windows](#windows))
+- [Setup](#setup)
 - [Running](#running)
 - [Environment variables](#environment-variables)
 - [Example queries](#example-queries)
@@ -42,21 +44,27 @@ Sources: warranty_policy.md § Standard Warranty Periods
 
 ## Features
 
-- 🎙️ **Voice call loop**: spoken greeting, push-to-talk (Enter to start and stop) or
-  fixed-duration recording, hang up by saying *"goodbye"* or *"end call"*.
-- 🧠 **The LLM does the routing**: every turn the model sees all tools and picks RAG, MCP,
-  both or neither. Independent calls run **in parallel** (e.g. knowledge base + clock).
-- 📚 **RAG as a tool**: `search_knowledge_base(query, top_k)` over 6 NovaTech documents
-  (local MiniLM embeddings + ChromaDB). Retrieval happens only when the LLM asks for it.
-- 🔌 **MCP server** (FastMCP, stdio) with `get_current_time`, `get_weather` (Open-Meteo),
-  a safe `calculate`, `days_between` and `read_system_log`. Tool schemas are
-  **discovered at runtime** and converted to function-calling format; none are duplicated by hand.
-- 🛡️ **Robust loop**: max 5 tool iterations then a forced answer, tool errors are fed back to
-  the LLM instead of crashing, history is rolled back on API failure, a friendly message on rate limits.
-- 🗣️ **Voice-first answers**: 2–4 spoken sentences; sources are cited **on screen**, never read aloud.
-- 🌐 **Optional web UI** (`python -m web.app`): call button, browser mic, chat transcript,
-  tool trace and spoken replies, all driven by the same orchestrator.
-- ✅ **90 offline tests** (fake LLM, fake embedder, mocked HTTP, real stdio MCP round-trip).
+- **Hands-free, full-duplex calls in the browser.** Silero VAD (a neural voice-activity model,
+  running in the page) detects *human speech* and ignores fans, typing, knocks and music.
+  There are no buttons to press while talking, and you can interrupt Nova mid-sentence (barge-in).
+- **English or Hindi.** Every call opens by asking which language you want; the reply language,
+  speech-recognition model and voice all follow your choice. Hindi hang-up phrases work too.
+- **The LLM does the routing.** Each turn the model sees every tool and picks RAG, MCP or both,
+  in parallel when possible.
+- **RAG as a tool**: `search_knowledge_base(query, top_k)` over 6 NovaWealth documents
+  (funds, SIPs and redemptions, KYC, fees, risk and compliance, company info).
+- **MCP server** (FastMCP, stdio): `get_current_time`, `get_market_status`,
+  `investment_projection`, `calculate`, `days_between`, `read_system_log`. Schemas are
+  discovered at runtime, never duplicated by hand.
+- **Scope and compliance guard-rails.** Off-topic questions are politely declined; no stock tips,
+  no "which fund should I buy", no promised returns; projections carry a disclaimer.
+- **Grounded by construction.** The first step of every turn *must* call a tool, so answers come
+  from the knowledge base or a tool result, not the model's memory (see trade-offs).
+- **Resilient.** If the main LLM hits a Groq rate limit, the agent switches automatically to a
+  fallback model. Tool errors go back to the LLM, looping answers are cut, and calls never crash.
+- **Side-panel transcript** of everything said on the call, with cited sources.
+- Terminal mode too (`python main.py`): push-to-talk, or `--text` for typing.
+- **132 offline tests.**
 
 ## High-level design
 
@@ -72,86 +80,76 @@ flowchart LR
     classDef ext fill:#fafafa,stroke:#757575,color:#424242,stroke-dasharray:4 3
     classDef store fill:#f1f8e9,stroke:#558b2f,color:#33691e
 
-    USER(["Caller"]):::io
+    USER(["Caller<br/>English or Hindi"]):::io
 
-    subgraph VOICE_IN["Voice input (voice/)"]
+    subgraph CLIENTS["Caller interfaces"]
         direction TB
-        MIC["Microphone"]:::io
-        REC["Recorder<br/>sounddevice<br/>push-to-talk or fixed duration<br/>silence + mic-permission check"]:::voice
-        STT["STT: GroqWhisperSTT<br/>whisper-large-v3-turbo<br/>+ product vocabulary hint"]:::voice
-        MIC --> REC -->|"16 kHz mono WAV"| STT
+        WEB["Browser call UI (web/)<br/>Silero VAD in-browser: speech only,<br/>noise ignored, full duplex + barge-in<br/>side-panel transcript"]:::voice
+        CLI["Terminal (main.py)<br/>sounddevice push-to-talk<br/>or fixed duration"]:::voice
     end
+
+    STT["STT: Groq Whisper<br/>auto-detect until language chosen,<br/>then en (turbo) / hi (large-v3)<br/>+ hallucination filter"]:::voice
 
     subgraph AGENT["Agent process (agent/)"]
         direction TB
-        LOOP["Call loop (main.py)<br/>greeting, hang-up phrases,<br/>error recovery"]:::brain
-        ORCH["Orchestrator<br/>tool-calling loop (max 5 iterations)<br/>session memory, compacted tool results<br/>tool errors returned to LLM"]:::brain
-        LLM{{"LLM router<br/>Groq qwen/qwen3.8-27b<br/>function calling, parallel tool calls"}}:::brain
-        REG["Tool registry<br/>local tools + MCP tools<br/>(schemas discovered at runtime)"]:::brain
-        LOOP -->|"user text"| ORCH
+        CALL["CallSession<br/>asks English or Hindi, locks language<br/>(prompt + STT + voice), hang-up,<br/>spoken apologies on errors"]:::brain
+        ORCH["Orchestrator<br/>tool loop (max 5), tool required on step 1<br/>session memory, compacted tool results<br/>tool errors returned to LLM"]:::brain
+        LLM{{"LLM router (Groq)<br/>qwen/qwen3.8-27b<br/>auto-fallback: gpt-oss-120b<br/>scope + compliance prompt"}}:::brain
+        REG["Tool registry<br/>local + MCP tools<br/>(schemas discovered at runtime)"]:::brain
+        CALL -->|"utterance"| ORCH
         ORCH <-->|"messages + tool schemas /<br/>tool calls or final answer"| LLM
         ORCH -->|"dispatch tool calls"| REG
     end
 
     subgraph RAG["RAG knowledge layer: in-process tool (rag/)"]
         direction TB
-        KBT["search_knowledge_base<br/>(query, top_k)"]:::rag
-        EMB["Embedding model<br/>all-MiniLM-L6-v2 (local)"]:::rag
-        CHROMA[("ChromaDB<br/>storage/chroma<br/>cosine")]:::store
-        CHUNKS["Top-k chunks<br/>+ source file and section"]:::rag
+        KBT["search_knowledge_base<br/>(English query, top_k)"]:::rag
+        EMB["all-MiniLM-L6-v2<br/>(local embeddings)"]:::rag
+        CHROMA[("ChromaDB<br/>storage/chroma")]:::store
+        CHUNKS["Top-k chunks<br/>+ source and section"]:::rag
         KBT --> EMB -->|"query vector"| CHROMA --> CHUNKS
     end
 
-    subgraph MCPSYS["MCP: system tools (separate process)"]
+    subgraph MCPSYS["MCP: system tools (separate process, stdio)"]
         direction TB
-        MCPC["MCPClient<br/>list_tools, call_tool<br/>schema to function format"]:::mcp
+        MCPC["MCPClient<br/>list_tools / call_tool"]:::mcp
         MCPS["FastMCP server<br/>mcp_server/server.py"]:::mcp
         T1["get_current_time"]:::mcp
-        T2["get_weather"]:::mcp
-        T3["calculate<br/>(AST whitelist, no eval)"]:::mcp
-        T4["days_between"]:::mcp
-        T5["read_system_log<br/>(logs/agent.log only)"]:::mcp
-        MCPC <-->|"JSON-RPC over stdio<br/>(spawned subprocess)"| MCPS
-        MCPS --- T1 & T2 & T3 & T4 & T5
+        T2["get_market_status<br/>(NSE/BSE hours)"]:::mcp
+        T3["investment_projection<br/>(SIP / lump sum, lakh-crore)"]:::mcp
+        T4["calculate<br/>(AST whitelist)"]:::mcp
+        T5["days_between<br/>(lock-in periods)"]:::mcp
+        T6["read_system_log"]:::mcp
+        MCPC <-->|"JSON-RPC over stdio"| MCPS
+        MCPS --- T1 & T2 & T3 & T4 & T5 & T6
     end
 
-    METEO[("Open-Meteo<br/>geocoding + forecast API")]:::ext
-    LOGF[("logs/agent.log")]:::ext
-
-    subgraph VOICE_OUT["Voice output (voice/)"]
-        direction TB
-        TTS["TTS: EdgeTTS<br/>sentence-pipelined synthesis"]:::voice
-        SPK["Speaker<br/>sounddevice playback"]:::io
-        TTS -->|"MP3 decoded by libsndfile"| SPK
-    end
-
-    SCREEN["Terminal display<br/>transcript, tool trace,<br/>answer + cited sources"]:::io
+    TTS["TTS: edge-tts<br/>en-IN Neerja / hi-IN Swara<br/>parallel sentence synthesis"]:::voice
 
     subgraph INGEST["Offline ingestion: python -m rag.ingest [--rebuild]"]
         direction LR
-        DOCS["data/docs/*.md<br/>6 NovaTech docs"]:::store
-        CHUNKER["Heading-aware chunker<br/>~550 chars, ~80 overlap<br/>metadata: source, section"]:::rag
-        EMB2["all-MiniLM-L6-v2<br/>embeddings"]:::rag
-        UPSERT["Idempotent upsert<br/>(replace per source)"]:::rag
+        DOCS["data/docs/*.md<br/>6 NovaWealth docs"]:::store
+        CHUNKER["Heading-aware chunker<br/>~550 chars, ~80 overlap"]:::rag
+        EMB2["MiniLM embeddings"]:::rag
+        UPSERT["Idempotent upsert<br/>stale docs removed"]:::rag
         DOCS --> CHUNKER --> EMB2 --> UPSERT
     end
 
-    USER -->|"speaks"| MIC
-    STT -->|"transcript"| LOOP
+    USER -->|"speaks"| WEB & CLI
+    WEB -->|"WAV utterance"| STT
+    CLI -->|"WAV"| STT
+    STT -->|"transcript"| CALL
     REG -->|"local tool"| KBT
-    CHUNKS -->|"tool result (JSON)"| ORCH
+    CHUNKS -->|"tool result"| ORCH
     REG -->|"MCP tool"| MCPC
-    MCPC -->|"tool result (JSON)"| ORCH
-    T2 -.->|"HTTPS"| METEO
-    T5 -.->|"tail N lines"| LOGF
-    ORCH -->|"final answer + trace"| LOOP
-    LOOP -->|"answer text"| TTS
-    LOOP --> SCREEN
-    SPK -->|"hears answer"| USER
+    MCPC -->|"tool result"| ORCH
+    ORCH -->|"answer + trace"| CALL
+    CALL -->|"reply in call language"| TTS
+    TTS -->|"MP3"| WEB & CLI
+    WEB -->|"hears answer"| USER
     UPSERT ==>|"writes"| CHROMA
 
-    style VOICE_IN fill:#f8f7fc,stroke:#b39ddb
-    style VOICE_OUT fill:#f8f7fc,stroke:#b39ddb
+    style CLIENTS fill:#f8f7fc,stroke:#b39ddb
     style AGENT fill:#fffaf3,stroke:#ffb74d
     style RAG fill:#f6fbf6,stroke:#81c784
     style MCPSYS fill:#f3fbfc,stroke:#4dd0e1
@@ -166,106 +164,82 @@ flowchart LR
 
 | Layer | Module | Responsibility |
 |---|---|---|
-| Entry / call loop | `main.py` | Wires components, runs the call: listen → think → show → speak. Greeting, hang-up detection, recovers from STT/LLM errors so the call never dies. |
-| Display | `display.py` | Rich rendering of transcripts, the tool-call table, answers and cited sources. |
-| Config | `config.py` | One immutable `Settings` from `.env`, paths, logging (coloured console + `logs/agent.log`). |
-| Orchestrator | `agent/orchestrator.py` | The brain: tool-calling loop, tool registry (local + MCP), parallel execution, iteration cap, error-to-LLM, session memory and compaction, source collection. |
-| LLM client | `agent/llm_client.py` | `LLMClient` protocol + `GroqLLMClient` (OpenAI-compatible tool calling). Normalises responses, strips leaked reasoning, retries malformed tool calls. |
-| MCP client | `agent/mcp_client.py` | Spawns the MCP server over stdio, `list_tools` → OpenAI function schemas, `call_tool` → text or `MCPToolError`. |
-| Prompts | `agent/prompts.py` | Compact system prompt (routing rules, grounding rules, spoken style), greeting, hang-up phrases. |
-| RAG tool | `rag/tool.py` | `search_knowledge_base` schema + async handler returning JSON chunks with source and section. |
-| Retriever | `rag/retriever.py` | Embeds the query, queries Chroma, returns scored chunks. |
-| Ingestion | `rag/ingest.py` | Heading-aware chunking (~550 chars, ~80 overlap), embeddings, idempotent upsert, `--rebuild`. |
-| Vector store | `rag/store.py` | Shared embedder and Chroma collection, so ingest and query can never disagree on model or metric. |
-| MCP server | `mcp_server/server.py` | FastMCP server exposing the 5 system tools; logs to `logs/mcp_server.log` (stdout is the protocol). |
-| Calculator | `mcp_server/calculator.py` | `ast`-whitelist evaluator: no `eval`, bounded exponent and result size. |
-| Weather | `mcp_server/weather.py` | Open-Meteo geocoding + current conditions, WMO code mapping. |
-| Recorder | `voice/recorder.py` | sounddevice capture (push-to-talk or fixed), silence and mic-permission detection, WAV encoding. |
-| STT | `voice/stt.py` | `SpeechToText` protocol + Groq Whisper with a product-vocabulary hint. |
-| TTS | `voice/tts.py` | `TextToSpeech` protocol + edge-tts with sentence-pipelined playback, `SilentTTS` for text mode. |
+| Browser call UI | `web/static/index.html` | Silero VAD speech detection, full-duplex barge-in, WAV encoding, playback, animated status orb, transcript side panel. No build step. |
+| Web server | `web/app.py` | FastAPI: `/api/call`, `/api/turn`, `/api/end`. One `CallSession` per call; shares the MCP server and models across calls. |
+| Terminal loop | `main.py` | Same call flow from the terminal: push-to-talk or fixed-duration recording, or typed input. |
+| Call flow | `agent/call.py` | `CallSession`: asks for and locks the language, hang-up detection, turns failures into spoken apologies in the caller's language. |
+| Languages | `agent/language.py` | English/Hindi detection from the caller's answer, per-language phrases and prompt rules. |
+| Orchestrator | `agent/orchestrator.py` | Tool-calling loop, tool registry (local + MCP), parallel execution, required first tool call, iteration cap, memory compaction, sources. |
+| LLM client | `agent/llm_client.py` | `LLMClient` protocol + Groq implementation: rate-limit fallback model, reasoning stripping, repetition guard. |
+| MCP client | `agent/mcp_client.py` | Spawns the MCP server over stdio, converts its tool schemas to function-calling format. |
+| Prompt | `agent/prompts.py` | Scope, compliance, grounding and spoken-style rules; hang-up phrases. |
+| RAG | `rag/` | Heading-aware chunking + idempotent ingest (removes stale docs), MiniLM + Chroma retrieval, the `search_knowledge_base` tool. |
+| MCP server | `mcp_server/server.py` | FastMCP tools; finance math in `finance.py`, safe calculator in `calculator.py`. |
+| Voice | `voice/` | Groq Whisper STT (per-language model, hallucination filter), edge-tts (per-language voice, parallel synthesis), terminal recorder. |
 
-Every external dependency (LLM, STT, TTS, input source, tool server) sits behind a small
-`Protocol`, so it can be swapped (for example OpenAI instead of Groq, or Whisper running
-locally) without touching the orchestrator. The tests use exactly these seams: a scripted LLM
-and a fake MCP server.
+### One turn in the browser
 
-### Data flow of one turn
-
-1. **Capture**: `Recorder` records 16 kHz mono audio until you press Enter. Silent clips are
-   dropped, because Whisper invents text like "Thank you." on silence.
-2. **Transcribe**: `GroqWhisperSTT` returns text; a vocabulary prompt keeps "NovaBand X200" spelled right.
-3. **Route**: the `Orchestrator` sends history + **all tool schemas** (1 local + 5 MCP) to the LLM.
-4. **Act**: for each requested tool call, local tools run in-process; MCP tools go over
-   JSON-RPC/stdio to the server subprocess. Calls in the same step run concurrently.
-   Failures become `{"error": ...}` results the LLM can reason about.
-5. **Loop**: results are appended as `tool` messages and the LLM is called again, up to
-   `MAX_TOOL_ITERATIONS` times, after which it must answer without tools.
-6. **Respond**: the final text is printed with the tool table and cited sources, then spoken.
-   TTS synthesizes sentence by sentence, so audio starts after about 1 s.
-7. **Remember**: the turn stays in history, but its bulky tool results are replaced with a
-   short placeholder (see below). History is capped at `MAX_HISTORY_TURNS`.
+1. **Detect speech.** Every 32 ms the page gets Silero's speech probability. An utterance
+   starts after ~100 ms of frames that are both speech-like (p ≥ 0.6) and louder than the
+   learned room noise, and ends after 700 ms of non-speech. Bursts under 300 ms are dropped,
+   and 400 ms of audio from before the start is kept so first syllables aren't clipped.
+2. **Barge-in.** While Nova talks the mic stays live. Interrupting needs high confidence
+   (p ≥ 0.85) and a clearly louder voice for ~190 ms, so Nova's own voice leaking from the
+   speakers (already reduced by browser echo cancellation) doesn't cut her off.
+3. **Transcribe.** The utterance goes to `/api/turn` as 16 kHz WAV. Whisper runs with no language
+   until the caller picks one, then `en` (turbo) or `hi` (large-v3). Stock Whisper
+   hallucinations on noise ("Thank you.") are discarded silently.
+4. **Route and act.** `CallSession` handles the language choice and hang-ups; everything else goes
+   to the orchestrator, which loops LLM ↔ tools (max 5 steps; a tool call is required on step 1).
+5. **Respond.** The answer is synthesized in the call language's voice (sentences in parallel),
+   returned with the transcript and sources, shown in the side panel and played. The mic is
+   already listening for the next question.
 
 ### Why RAG is a tool, not a pre-step
 
-Always retrieving before the LLM call wastes latency and tokens on questions like "what's the
-weather?" and pollutes the context with irrelevant chunks. As a tool, the LLM:
+The LLM decides *what* to search for, rewriting a Hindi or rambling spoken question into a
+focused English query that matches the English documents ("ELSS lock-in period"). It can search
+again if the first results miss and combine retrieval with live tools in one step (lock-in rule
++ today's date + `days_between`). Small talk and pure calculations don't pay for retrieval.
 
-- decides **whether** to search (small talk and math don't),
-- writes a **focused query** ("X200 standard warranty period") instead of embedding a rambling
-  spoken sentence,
-- can **search again** with a different query if the first results miss,
-- can **combine** it with live data in the same step (warranty policy + today's date).
+### Why the knowledge base is local but system tools are on MCP
 
-### Why the RAG tool is local but system tools are on MCP
+The knowledge base is the agent's own domain layer: same process, same model cache, no
+serialization hop. Market status, projections, dates and the calculator are generic capabilities
+that other agents or MCP clients (IDEs, desktop assistants) could reuse. Running them in a separate
+process isolates failures. MCP over **stdio** needs no ports or auth, and the server's lifetime
+is tied to the agent. The orchestrator treats both kinds of tool identically.
 
-- The **knowledge base is the agent's own domain layer**: it shares the agent's process, model
-  cache and data, and calling it needs no network or serialization hop.
-- **System tools are generic capabilities** (clock, weather, math, logs). Putting them behind
-  MCP makes them reusable by any MCP client (desktop assistants, IDEs, other agents), lets them be
-  developed and deployed independently, and isolates them in a separate process. A crash or
-  hang in a tool can't take down the agent.
-- The orchestrator treats both uniformly through one tool registry; the LLM can't tell
-  the difference.
+### Conversation memory
 
-### Why MCP over stdio
-
-The agent spawns the server as a subprocess and speaks JSON-RPC over stdin/stdout. Zero
-network configuration, no ports or auth to manage, and the server's lifetime is tied to the
-call. The trade-off is that one server serves one client on one machine; see trade-offs below.
-
-### Conversation memory and compaction
-
-Each LLM call resends the whole history. Keeping raw tool results (retrieved chunks, weather
-JSON) would grow tokens quickly and tempt the model to reuse stale data ("today's date" from
-an earlier turn). Dropping tool calls entirely was **tested and rejected**: with a history of
-tool-free answers the model imitated it and answered from memory, inventing dates. The
-compromise keeps the tool *calls* in history but replaces their *results* with a short
-placeholder, so the model keeps the habit of calling tools while the context stays small.
+History is kept per call, but once a turn ends its raw tool results are replaced with a short
+placeholder while the tool *calls* stay. Dropping the calls entirely made the model imitate
+tool-free answers and invent facts; keeping full results wasted tokens and invited stale data
+(yesterday's date, an earlier search).
 
 ## Design decisions and trade-offs
 
-| Decision | Chosen | Alternatives | Why / trade-off |
-|---|---|---|---|
-| **LLM host** | Groq (`qwen/qwen3.8-27b`) | OpenAI, local Ollama | Groq's LPU inference returns tool calls in roughly 0.3–0.7 s, which matters for a voice call. Qwen supports **parallel tool calls** on Groq (gpt-oss does not), so RAG + MCP happens in one step. The brief asked for Llama, but Groq no longer serves Llama chat models to new keys (404), so Qwen is the tested default. Trade-off: the free tier allows 8K tokens/min (see Troubleshooting). |
-| **Reasoning** | Model default (Qwen thinks briefly) | `reasoning_effort=none` | With thinking disabled, Qwen skipped tools and invented facts in testing. Reasoning text is stripped before display and speech. |
-| **Embeddings** | Local `all-MiniLM-L6-v2` | OpenAI / Cohere embedding APIs | Free, offline after the first download, no second API key; a search (embed + Chroma query) takes tens of milliseconds on CPU. Trade-off: weaker on keyword-style queries than larger models (hybrid search or a reranker would help, see Future improvements). |
-| **Vector DB** | ChromaDB (embedded, persistent) | Pinecone, Weaviate, pgvector | Zero infrastructure: a folder on disk, `pip install` only. Fine for thousands of chunks; a hosted DB would add replication, filtering at scale and multi-user access. |
-| **Chunking** | Heading-aware, ~550 chars, ~80 overlap | Fixed-size tokens, semantic chunking | FAQ/policy docs are organised by heading, so chunks align with topics and carry `source` + `section` metadata for citations. The `title > section` prefix gives each embedding its context. |
-| **STT** | Groq Whisper (`whisper-large-v3-turbo`) | Local faster-whisper, Deepgram | About 300 ms per utterance, same API key as the LLM, high accuracy. Trade-off: audio leaves the machine. |
-| **TTS** | edge-tts | ElevenLabs, OpenAI TTS, pyttsx3 | Free, no key, natural neural voices, cross-platform. MP3 is decoded by the libsndfile bundled in `soundfile`, so **no ffmpeg**. Trade-off: unofficial service, network-dependent; failures fall back to on-screen text. |
-| **Turn-taking** | Push-to-talk (+ `--duration` fallback) | VAD (Silero/WebRTC) with barge-in | Deterministic and robust in noisy rooms, trivial to demo, no false triggers from the agent's own voice. Trade-off: less natural than VAD; listed as a future improvement. |
-| **MCP transport** | stdio | Streamable HTTP / SSE | No ports, auth or deployment, and lifecycle is tied to the agent. Trade-off: single client and local only. HTTP would allow a shared, remotely deployed tool server (and would then need auth). |
-| **Audio I/O** | sounddevice | PyAudio | Ships PortAudio in wheels on Windows and macOS, so `pip install` just works. PyAudio often needs compilers on Windows. |
-| **Calculator** | `ast` whitelist evaluator | `eval`, sympy, numexpr | No code execution possible by construction, tiny, no dependency. Bounds on exponent and result size prevent CPU or memory exhaustion (e.g. `9**9**9`). |
+| Decision | Chosen | Why / trade-off |
+|---|---|---|
+| **Speech detection** | Silero VAD in the browser (ONNX), with an energy-based fallback | Energy thresholds can't tell a voice from a fan or music; Silero scores *speech*. Running it client-side means only real utterances are uploaded. Trade-off: about 2 MB of model and WASM from a CDN on first load; if that fails, the page falls back to the energy detector. |
+| **Turn-taking** | Full duplex with barge-in | Feels like a real call. A stricter barge-in threshold guards against echo; headphones make it best. |
+| **Grounding** | `tool_choice="required"` on each turn's first step | Prompt rules alone failed in Hindi: the model answered ELSS and SIP questions from memory. Forcing a tool call grounds every answer. Cost: off-topic or small-talk turns take one extra LLM call. Configurable via `REQUIRE_TOOL_FIRST`. |
+| **LLM** | Groq `qwen/qwen3.8-27b` + `openai/gpt-oss-120b` fallback | Fast tool calling with parallel calls. Groq quotas are per model, and the free tier allows Qwen 200K tokens/day, so a second model keeps calls working when the first is exhausted. |
+| **STT** | Whisper turbo (English, detection) / large-v3 (Hindi) | large-v3 was clearly more accurate on Hindi in testing; turbo is faster for English. |
+| **TTS** | edge-tts `en-IN-NeerjaNeural` / `hi-IN-SwaraNeural` | Free, natural Indian voices, the same persona in both languages. Sentences are synthesized in parallel. |
+| **Numbers** | Tools return lakh/crore strings; replies use digits | Spelling ₹12,00,000 out in Hindi words made the model loop ("एक लाख बीस हज़ार नहीं..."); digits are read naturally by the voices. A repetition guard truncates any looping answer. |
+| **Scope** | Prompt-level domain restriction | Declines off-topic requests in one sentence and redirects. No separate classifier, which keeps latency low; a production system might add one. |
+| **Embeddings / vector DB** | Local MiniLM + embedded Chroma | Free, offline, zero infrastructure. The LLM writes English queries, so English-only embeddings work for Hindi callers. |
+| **MCP transport** | stdio | No deployment or auth; single local client. HTTP would allow a shared tool server. |
 
 ## Setup
 
 **Prerequisites**
 
 - **Python 3.11+** (developed and tested with 3.12 on macOS / Apple Silicon)
-- A microphone and speakers/headphones for voice mode (text mode needs neither)
-- A free **Groq API key**: https://console.groq.com/keys → *Create API Key*
-- Internet access (Groq, edge-tts, Open-Meteo, and a one-time ~90 MB embedding model download)
+- A free **Groq API key**: https://console.groq.com/keys
+- A microphone and speakers (headphones recommended for barge-in)
+- Internet access (Groq, edge-tts, the VAD model CDN, and a one-time ~90 MB embedding download)
 - **ffmpeg is not required.**
 
 ### macOS / Linux
@@ -273,190 +247,140 @@ placeholder, so the model keeps the habit of calling tools while the context sta
 ```bash
 git clone <your-repo-url> voice-agent && cd voice-agent
 
-# Linux only: PortAudio for sounddevice
-# sudo apt-get install -y libportaudio2        (Debian/Ubuntu)
-# sudo dnf install -y portaudio                (Fedora)
+# Linux only, for the terminal mode's audio: sudo apt-get install -y libportaudio2
 
 python3 -m venv .venv            # use python3.12 / python3.11 if python3 is older
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-cp .env.example .env             # then edit .env and set GROQ_API_KEY=gsk_...
+cp .env.example .env             # then set GROQ_API_KEY=gsk_...
 
-python -m rag.ingest             # build the knowledge base (first run downloads the model)
-python main.py --text            # quick check without a microphone
-python main.py                   # voice call
+python -m rag.ingest             # build the knowledge base
+python -m web.app                # open http://127.0.0.1:8000 and press Start call
 ```
 
-### Windows
-
-PowerShell:
+### Windows (PowerShell)
 
 ```powershell
 git clone <your-repo-url> voice-agent; cd voice-agent
 
-py -3.12 -m venv .venv           # or: py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1     # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
-Copy-Item .env.example .env      # then edit .env and set GROQ_API_KEY=gsk_...
+Copy-Item .env.example .env      # then set GROQ_API_KEY=gsk_...
 
 python -m rag.ingest
-python main.py --text
-python main.py
+python -m web.app
 ```
 
-(Command Prompt: activate with `.venv\Scripts\activate.bat` and copy with `copy .env.example .env`.)
-
-Windows has no system timezone database; the pinned `tzdata` package provides it for `get_current_time`.
+The pinned `tzdata` package provides time zones on Windows.
 
 ## Running
 
 | Command | What it does |
 |---|---|
-| `python main.py` | Voice call, push-to-talk: press **Enter** to start talking and **Enter** to stop. |
-| `python main.py --duration 6` | Voice call with fixed 6-second recordings (hands-free). |
-| `python main.py --text` | Type instead of speaking (debugging). Add `--tts` to also hear the answers. |
-| `python main.py --list-devices` | List audio input/output devices. |
-| `python -m rag.ingest [--rebuild]` | (Re)build the knowledge base. Re-running is idempotent; `--rebuild` drops and recreates it. |
-| `python -m mcp_server.server` | Run the MCP server on its own (e.g. with `npx @modelcontextprotocol/inspector`). |
-| `python -m web.app` | Optional web UI at http://127.0.0.1:8000 (see below). |
+| `python -m web.app` | **Browser call** at http://127.0.0.1:8000: hands-free, bilingual, barge-in, transcript panel. |
+| `python main.py` | Terminal voice call, push-to-talk (Enter to start and stop). Add `--duration 6` for fixed-length clips. |
+| `python main.py --text` | Type instead of speaking; add `--tts` to hear answers, `--lang en` or `--lang hi` to skip the language question. |
+| `python -m rag.ingest [--rebuild]` | (Re)build the knowledge base; mirrors `data/docs/` exactly. |
+| `python -m mcp_server.server` | Run the MCP server standalone (e.g. with the MCP Inspector). |
 
-Say **"goodbye"**, **"end call"** or **"hang up"** to end the call, or press Ctrl+C.
-Piped input works too: `printf "What's your return window?\ngoodbye\n" | python main.py --text`.
-
-### Optional web UI
-
-```bash
-python -m web.app        # open http://127.0.0.1:8000, click "Call", allow the microphone
-```
-
-A single-page FastAPI app (`web/app.py` + `web/static/index.html`, no build step). The browser
-records each utterance with `MediaRecorder` (WebM/Opus) and posts it to `/api/turn`. The
-server reuses the **same** Groq Whisper STT, Orchestrator (RAG + MCP) and edge-tts as the CLI,
-and returns the transcript, answer, tool trace, sources and MP3 audio. Each tab gets its own
-session, so conversation memory works per caller. You can also type, and clicking Talk while
-Nova is speaking stops playback. Endpoints: `POST /api/start`, `POST /api/turn`, `POST /api/end`.
+End a call with **"goodbye"**, **"end call"**, **"अलविदा"** or **"कॉल खत्म"**, or press **End call**.
 
 ## Environment variables
 
-Set these in `.env` (copied from `.env.example`). Only the API key is required.
-
 | Name | Required | Default | Description |
 |---|---|---|---|
-| `GROQ_API_KEY` | **yes** | – | Groq API key, used for both the LLM and Whisper STT. |
-| `GROQ_MODEL` | no | `qwen/qwen3.8-27b` | Groq chat model with tool calling (`openai/gpt-oss-120b` also works). |
-| `GROQ_REASONING_EFFORT` | no | *(empty)* | Passed to reasoning models. Empty = model default. Use `low` for gpt-oss. Avoid `none` with Qwen. |
-| `GROQ_STT_MODEL` | no | `whisper-large-v3-turbo` | Groq Whisper model (`whisper-large-v3` for slightly higher accuracy). |
-| `TTS_VOICE` | no | `en-US-AriaNeural` | Any edge-tts voice (`edge-tts --list-voices`), e.g. `en-IN-NeerjaNeural`. |
-| `EMBEDDING_MODEL` | no | `all-MiniLM-L6-v2` | sentence-transformers model. Re-run `python -m rag.ingest --rebuild` after changing. |
-| `MAX_TOOL_ITERATIONS` | no | `5` | Max LLM↔tool round-trips per turn before forcing an answer. |
-| `MAX_HISTORY_TURNS` | no | `8` | Conversation turns kept in memory. |
-| `RAG_TOP_K` | no | `4` | Default number of chunks returned by `search_knowledge_base`. |
-| `RECORD_SAMPLE_RATE` | no | `16000` | Microphone sample rate in Hz. |
-| `LOG_LEVEL` | no | `INFO` | `DEBUG` also shows per-call token usage. |
+| `GROQ_API_KEY` | **yes** | – | Groq key for the LLM and Whisper. |
+| `GROQ_MODEL` | no | `qwen/qwen3.8-27b` | Main tool-calling model. |
+| `GROQ_FALLBACK_MODEL` | no | `openai/gpt-oss-120b` | Used automatically while the main model is rate-limited. Empty disables it. |
+| `GROQ_REASONING_EFFORT` | no | *(empty)* | Passed to the main model; empty = model default. |
+| `GROQ_STT_MODEL` | no | `whisper-large-v3-turbo` | Whisper for English and language detection. |
+| `GROQ_STT_MODEL_HI` | no | `whisper-large-v3` | Whisper for Hindi calls. |
+| `TTS_VOICE_EN` / `TTS_VOICE_HI` | no | `en-IN-NeerjaNeural` / `hi-IN-SwaraNeural` | edge-tts voices per language. |
+| `EMBEDDING_MODEL` | no | `all-MiniLM-L6-v2` | Re-run ingest with `--rebuild` after changing it. |
+| `REQUIRE_TOOL_FIRST` | no | `true` | Force a tool call before every answer (grounding). |
+| `MAX_TOOL_ITERATIONS` | no | `5` | LLM↔tool round-trips per turn. |
+| `MAX_HISTORY_TURNS` | no | `8` | Turns kept in memory. |
+| `RAG_TOP_K` | no | `4` | Chunks per search. |
+| `RECORD_SAMPLE_RATE` | no | `16000` | Terminal-mode recording rate. |
+| `LOG_LEVEL` | no | `INFO` | `DEBUG` shows token usage per call. |
 
 ## Example queries
 
-Facts come from the mock docs in [`data/docs/`](data/docs), so answers can be checked.
-
-| Type | Query | Expected tools → answer |
-|---|---|---|
-| RAG | "What's the battery life of the NovaBand X200 and is it waterproof?" | `search_knowledge_base` → up to 14 days; 5 ATM water resistant (swim-proof), not fully waterproof |
-| RAG | "How much does the NovaHub cost in India?" | `search_knowledge_base` → ₹12,499 |
-| RAG | "How do I factory reset the X200 if the screen is frozen?" | `search_knowledge_base` → hold the side button 15 s on the charger |
-| MCP | "What's the weather in Mumbai right now?" | `get_weather` → live temperature and conditions |
-| MCP | "What is the square root of 1764 times 3.5?" | `calculate` → 147 |
-| MCP | "How many days are there between 15 August 2026 and Christmas?" | `days_between` → 132 |
-| MCP | "Show me the last 5 lines of your system log." | `read_system_log` |
-| **RAG + MCP** | "I bought my X200 on 1st March 2026. Based on today's date, is it still under the standard warranty?" | `search_knowledge_base` + `get_current_time` → `days_between` → yes, 238 of 365 days used |
-| **RAG + MCP** | "What's your return window, and what's today's date?" | `search_knowledge_base` + `get_current_time` → 30 days from delivery; today's date |
-| **RAG + MCP** | "If I buy the X200 plus NovaCare+, what's the total in rupees?" | `search_knowledge_base` + `calculate` → ₹8,999 + ₹1,499 = ₹10,498 |
-| Memory | "How much is the X200?" → "And the NovaHub?" | second turn resolves "the NovaHub" in context |
-| Grounding | "Does the X200 have an ECG sensor?" | `search_knowledge_base` → no ECG; lists the sensors the spec sheet does include |
+| Type | English | Hindi | Tools |
+|---|---|---|---|
+| RAG | "What is the exit load on the Flexi Cap fund?" | "ELSS फंड में लॉक-इन कितने साल का होता है?" | `search_knowledge_base` |
+| RAG | "What documents do I need for KYC?" | "रिडेम्पशन का पैसा कितने दिन में आता है?" | `search_knowledge_base` |
+| MCP | "Is the stock market open right now?" | "क्या अभी शेयर बाज़ार खुला है?" | `get_market_status` |
+| MCP | "If I invest 10,000 a month for 10 years at 12%, what will I get?" | "हर महीने 10,000 की SIP 10 साल तक 12% पर कितनी बनेगी?" | `investment_projection` |
+| **RAG + MCP** | "I invested in the ELSS fund on 1 March 2024. Can I redeem it today?" | – | `search_knowledge_base` + `get_current_time` → `days_between` |
+| **RAG + MCP** | "What's the minimum SIP, and what would that grow to in 15 years at 12%?" | – | `search_knowledge_base` + `investment_projection` |
+| Compliance | "Which fund should I buy to get rich fast?" | – | Neutral explanation, no recommendation, suggests an advisor |
+| Scope | "What's the weather in Mumbai?" / "Who won the cricket match?" | – | Politely declined |
 
 ## Tests
 
 ```bash
-python -m pytest -q                  # 90 tests, under 1 second, no network or API key needed
-python -m pytest -q -m "not integration"   # skip the test that spawns the MCP server
+python -m pytest -q          # 132 tests, about 1 s, no network or API key needed
 ```
 
-| File | Covers |
-|---|---|
-| `tests/test_orchestrator.py` | Scripted fake LLM: RAG + MCP in one turn with results matched to call ids, tool failure fed back, unknown tools and bad JSON args, iteration cap → forced tool-less answer, rollback on LLM failure, history compaction and cap, tool-name clashes. |
-| `tests/test_calculator.py` | Valid math, injection attempts (`__import__`, dunder escapes, lambdas, comprehensions, names), resource exhaustion (`9**9**9`, chained powers, `factorial(1000)`), math errors. |
-| `tests/test_mcp_tools.py` | Each tool's logic, `read_system_log` path restriction, Open-Meteo via mocked HTTP, schema conversion, and a real stdio MCP round-trip. |
-| `tests/test_rag.py` | Heading split, chunk size and overlap, metadata on all docs, retrieval on a temp Chroma with a deterministic embedder, empty-KB error, `--rebuild`, tool output. |
-| `tests/test_helpers.py` | Reasoning stripping, argument parsing, hang-up phrases, TTS sentence splitting, silence and mic-permission detection. |
+Covers: the language state machine and detection (including Devanagari), hang-ups in both
+languages, Whisper hallucination filtering, the orchestrator with a scripted LLM (RAG + MCP in
+one turn, required first tool, failures, iteration cap, rollback, memory), the LLM rate-limit
+fallback, the repetition guard, finance math against closed-form formulas, market hours,
+lakh/crore formatting, calculator safety, RAG chunking and retrieval on a temporary Chroma, and
+a real stdio MCP round-trip.
+
+The browser pipeline was verified end to end in headless Chrome with a recorded fake
+microphone: white noise, a beep, knocks and a music chord were ignored, while spoken requests
+were detected, answered and correctly interrupted Nova (barge-in).
 
 ## Project structure
 
 ```
-voice-agent/
-├── main.py                  # CLI entry: modes, listeners, the call loop
-├── config.py                # Settings from .env, paths, logging
-├── display.py               # Rich terminal rendering
-├── agent/
-│   ├── orchestrator.py      # tool-calling loop, routing, memory
-│   ├── llm_client.py        # LLMClient protocol + Groq implementation
-│   ├── mcp_client.py        # stdio MCP client + schema conversion
-│   └── prompts.py           # system prompt, greeting, hang-up phrases
-├── rag/
-│   ├── ingest.py            # chunk → embed → store (python -m rag.ingest)
-│   ├── retriever.py         # semantic search over Chroma
-│   ├── store.py             # shared embedder + Chroma collection
-│   └── tool.py              # search_knowledge_base tool
-├── mcp_server/
-│   ├── server.py            # FastMCP server (5 tools)
-│   ├── calculator.py        # safe AST evaluator
-│   └── weather.py           # Open-Meteo client
-├── voice/
-│   ├── recorder.py          # sounddevice capture
-│   ├── stt.py               # Groq Whisper
-│   └── tts.py               # edge-tts + playback
 ├── web/
-│   ├── app.py               # optional FastAPI UI (python -m web.app)
-│   └── static/index.html    # single-page call UI
-├── data/docs/               # 6 NovaTech markdown documents
-├── docs/hld.mmd, hld.png    # architecture diagram
-├── tests/                   # pytest suite
-├── logs/  storage/          # runtime output (gitignored)
-├── .env.example  requirements.txt  pyproject.toml
+│   ├── app.py               # FastAPI call server (python -m web.app)
+│   └── static/index.html    # call UI: Silero VAD, barge-in, transcript panel
+├── main.py                  # terminal call loop
+├── config.py  display.py
+├── agent/
+│   ├── call.py              # CallSession: language, hang-up, apologies
+│   ├── language.py          # English/Hindi detection + phrases
+│   ├── orchestrator.py      # tool-calling loop, routing, memory
+│   ├── llm_client.py        # Groq client, fallback model, guards
+│   ├── mcp_client.py        # stdio MCP client + schema conversion
+│   └── prompts.py           # scope / compliance / style rules
+├── rag/                     # ingest.py, retriever.py, store.py, tool.py
+├── mcp_server/              # server.py, finance.py, calculator.py
+├── voice/                   # stt.py, tts.py, recorder.py
+├── data/docs/               # 6 NovaWealth documents
+├── docs/hld.mmd, hld.png
+└── tests/
 ```
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| **"microphone returned pure digital silence"** or it never hears you (macOS) | System Settings → Privacy & Security → **Microphone** → enable your terminal app (Terminal, iTerm, VS Code), then **restart the terminal**. |
-| Same on Windows | Settings → Privacy & security → Microphone → allow desktop apps. Check the right input with `python main.py --list-devices`. |
-| "Sorry, I didn't catch that" every time | Speak closer or louder, or use `--duration 6`. Make sure the default input device is your mic (`--list-devices`). |
-| No sound / `[TTS] could not speak` | Check the default output device (`--list-devices`) and volume. The answer is still printed. edge-tts needs internet. |
-| `PortAudio library not found` (Linux) | `sudo apt-get install libportaudio2` |
-| `[LLM] Groq LLM rate-limited or busy; retrying in 12s` | The free tier allows **8,000 tokens/min**, and one tool turn uses about 2–6K. The SDK waits and retries automatically. Pause between questions, or upgrade to Groq's Developer tier. |
-| `model ... does not exist or you do not have access` | Groq changed its model list. Run `python -c "from groq import Groq; print([m.id for m in Groq().models.list().data])"` and set `GROQ_MODEL` to a tool-calling model. |
-| "The knowledge base is empty" | Run `python -m rag.ingest`. |
-| Slow first start | The embedding model (~90 MB) downloads once to `~/.cache/huggingface`. Later starts take a few seconds. |
-| `GROQ_API_KEY is not set` | `cp .env.example .env` and add your key. |
-| `ModuleNotFoundError` | Activate the venv and run commands from the project root (`python -m rag.ingest`, not `python rag/ingest.py`). |
+| Stays on "Listening" and never hears you | Allow microphone access for the site (lock icon in the address bar). Check the browser is using the right input device in system sound settings. Speak at normal volume, close to the mic. |
+| Nova interrupts herself | Her voice is leaking from the speakers into the mic. Use headphones, or lower the volume. |
+| Background noise triggers it | Shouldn't happen with Silero. If the browser console shows "energy fallback", the VAD model failed to load (offline or CDN blocked); reload with internet access. |
+| "I'm handling a lot of requests right now" | Both the main and fallback Groq models are rate-limited (the free tier allows 200K tokens/day per model). Wait a few minutes, or upgrade to Groq's Developer tier. The server log shows the exact limit. |
+| Hindi transcripts are poor | Speak a little slower; `GROQ_STT_MODEL_HI=whisper-large-v3` (the default) is the more accurate model. |
+| "The knowledge base is empty" | `python -m rag.ingest` |
+| Terminal mode records silence (macOS) | System Settings → Privacy & Security → Microphone → enable your terminal app, then restart it. |
 
 ## Future improvements
 
-- **Streaming end to end**: stream LLM tokens into TTS sentence by sentence, and stream STT
-  (Groq or Deepgram realtime), to cut perceived latency below 1 s.
-- **VAD + barge-in**: Silero/WebRTC VAD for hands-free turn-taking, and stop TTS when the caller
-  starts talking.
-- **Telephony**: Twilio Media Streams or SIP so it can take real phone calls (μ-law 8 kHz audio,
-  streaming WebSocket).
-- **MCP over Streamable HTTP with auth**: deploy the tool server separately (OAuth or API keys,
-  per-tool authorization, rate limits) and share it across agents.
-- **Better retrieval**: hybrid BM25 + vector search, a cross-encoder reranker, query rewriting,
-  and score thresholds to say "I don't know" earlier.
-- **Retrieval and answer evaluation**: a golden Q&A set with recall@k / MRR for retrieval and
-  LLM-as-judge or RAGAS for groundedness, run in CI.
-- **Observability**: OpenTelemetry traces per turn (STT, LLM, tool, TTS latencies), token cost tracking.
-- **Human handoff**: an `escalate_to_human` tool that creates a ticket with the transcript.
-- **Multilingual**: Whisper language detection + matching TTS voice (e.g. Hindi).
+- **Streaming end to end**: stream LLM tokens into TTS and stream STT, for sub-second replies.
+- **Server-side VAD and telephony**: Twilio Media Streams or SIP, so it takes real phone calls.
+- **Smarter barge-in**: acoustic echo cancellation with a reference signal, so interrupting works on loud speakers.
+- **Topic classifier** before the LLM for cheaper, auditable scope enforcement.
+- **Authenticated account tools** over MCP (portfolio value, SIP status) with OAuth and per-tool authorization.
+- **Better retrieval**: hybrid BM25 + vector search, a reranker, and multilingual embeddings.
+- **Evaluation**: a golden bilingual Q&A set for retrieval recall and answer groundedness, run in CI.
+- **More languages**: Marathi, Tamil, Bengali via Whisper + matching edge-tts voices.

@@ -84,13 +84,27 @@ class Orchestrator:
         max_iterations: int = 5,
         max_history_turns: int = 8,
         system_prompt: str = SYSTEM_PROMPT,
+        require_tool_first: bool = False,
     ) -> None:
+        """
+        Args:
+            llm: The routing LLM.
+            local_tools: In-process tools such as the RAG knowledge base.
+            tool_server: Remote tool provider (the MCP client), if any.
+            max_iterations: LLM <-> tool round-trips per turn before forcing an answer.
+            max_history_turns: Conversation turns kept in memory.
+            system_prompt: Initial system prompt.
+            require_tool_first: Force at least one tool call on each turn's first step,
+                so every answer is grounded in a tool result. Prompting alone proved
+                unreliable for this (e.g. in Hindi the model answered from memory).
+        """
         self._llm = llm
         self._local = {t.name: t for t in local_tools}
         self._server = tool_server
         self._max_iterations = max_iterations
         self._max_history_turns = max_history_turns
         self._system_prompt = system_prompt
+        self._require_tool_first = require_tool_first
 
         remote = tool_server.tool_names if tool_server else []
         clash = set(self._local) & set(remote)
@@ -107,6 +121,11 @@ class Orchestrator:
         """Start a fresh conversation (keeps only the system prompt)."""
         self.messages = [{"role": "system", "content": self._system_prompt}]
 
+    def set_system_prompt(self, prompt: str) -> None:
+        """Replace the system prompt mid-call (e.g. after the caller picks a language)."""
+        self._system_prompt = prompt
+        self.messages[0] = {"role": "system", "content": prompt}
+
     async def run_turn(self, user_text: str) -> TurnResult:
         """Answer one user message, calling tools as the LLM requests.
 
@@ -121,7 +140,8 @@ class Orchestrator:
         try:
             for iteration in range(1, self._max_iterations + 1):
                 result.iterations = iteration
-                response = await self._llm.complete(self.messages, self._tool_defs)
+                choice = "required" if self._require_tool_first and iteration == 1 else "auto"
+                response = await self._llm.complete(self.messages, self._tool_defs, tool_choice=choice)
                 self.messages.append(response.message)
 
                 if not response.tool_calls:

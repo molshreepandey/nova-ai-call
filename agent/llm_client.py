@@ -8,13 +8,38 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from groq import AsyncGroq, BadRequestError
+import time
+
+from groq import AsyncGroq, BadRequestError, RateLimitError
 
 logger = logging.getLogger(__name__)
 
 # Some reasoning models emit their chain of thought inline, sometimes without the
 # opening tag; it must never be spoken.
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?।])\s+|\n+")
+
+
+def _trim_repetition(text: str) -> str:
+    """Cut a degenerate answer at the first repeated sentence.
+
+    Models occasionally loop ("X, no, X... sorry, X...") on hard number phrasing.
+    A looping answer must never be read aloud, so keep only the text before the
+    first sentence that repeats an earlier one.
+    """
+    seen: set[str] = set()
+    kept: list[str] = []
+    for sentence in _SENTENCE_SPLIT.split(text):
+        key = " ".join(sentence.lower().split())
+        if not key:
+            continue
+        if key in seen:
+            break
+        seen.add(key)
+        kept.append(sentence.strip())
+    return " ".join(kept) if kept else text
 
 
 def _strip_reasoning(text: str) -> str:
@@ -48,10 +73,25 @@ class LLMClient(Protocol):
     """Anything that can run one chat-completion step with optional tools."""
 
     async def complete(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str = "auto",
     ) -> LLMResponse:
-        """Return the model's next message for ``messages``."""
+        """Return the model's next message for ``messages``.
+
+        ``tool_choice`` is "auto" (model decides) or "required" (must call a tool).
+        """
         ...
+
+
+PRIMARY_COOLDOWN_S = 60.0
+
+
+def _rate_limit_reason(exc: RateLimitError) -> str:
+    """Short human-readable reason, e.g. "tokens per day (TPD)"."""
+    match = re.search(r"on ([a-z ]+\([A-Z]+\))", str(exc))
+    return match.group(1) if match else "rate limit"
 
 
 def _parse_arguments(raw: str | None) -> tuple[dict[str, Any], str | None]:
@@ -74,6 +114,7 @@ class GroqLLMClient:
         reasoning_effort: str = "",
         temperature: float = 0.2,
         max_tokens: int = 512,
+        fallback_model: str = "",
     ) -> None:
         """
         Args:
@@ -83,15 +124,23 @@ class GroqLLMClient:
             temperature: Sampling temperature; low keeps tool routing deterministic.
             max_tokens: Completion cap. Spoken answers are short, and a small cap
                 stretches the free-tier tokens-per-minute budget.
+            fallback_model: Model to switch to when ``model`` is rate-limited (Groq
+                quotas are per model, so a second model keeps the call going when the
+                first hits its per-minute or per-day token limit). Empty disables it.
         """
-        self._client = AsyncGroq(api_key=api_key, max_retries=3)
+        self._client = AsyncGroq(api_key=api_key, max_retries=2)
         self.model = model
+        self.fallback_model = fallback_model
         self._reasoning_effort = reasoning_effort
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._primary_blocked_until = 0.0
 
     async def complete(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str = "auto",
     ) -> LLMResponse:
         """Run one completion step.
 
@@ -107,15 +156,23 @@ class GroqLLMClient:
         if self._reasoning_effort:
             kwargs["reasoning_effort"] = self._reasoning_effort
         if tools:
-            kwargs.update(tools=tools, tool_choice="auto")
+            kwargs.update(tools=tools, tool_choice=tool_choice)
 
-        try:
-            completion = await self._client.chat.completions.create(**kwargs)
-        except BadRequestError as exc:
-            if "tool_use_failed" not in str(exc):
-                raise
-            logger.warning("[LLM] model produced a malformed tool call; retrying once")
-            completion = await self._client.chat.completions.create(**kwargs)
+        if self.fallback_model and time.monotonic() < self._primary_blocked_until:
+            completion = await self._create(self._for_fallback(kwargs))
+        else:
+            try:
+                completion = await self._create(kwargs)
+            except RateLimitError as exc:
+                if not self.fallback_model:
+                    raise
+                # Skip the primary for a minute instead of hitting its limit on every call.
+                self._primary_blocked_until = time.monotonic() + PRIMARY_COOLDOWN_S
+                logger.warning(
+                    "[LLM] %s rate-limited (%s); switching to %s",
+                    self.model, _rate_limit_reason(exc), self.fallback_model,
+                )
+                completion = await self._create(self._for_fallback(kwargs))
 
         if completion.usage:
             logger.debug(
@@ -124,7 +181,7 @@ class GroqLLMClient:
                 completion.usage.completion_tokens,
             )
         msg = completion.choices[0].message
-        content = _strip_reasoning(msg.content or "")
+        content = _trim_repetition(_strip_reasoning(msg.content or ""))
         tool_calls: list[ToolCall] = []
         for tc in msg.tool_calls or []:
             args, error = _parse_arguments(tc.function.arguments)
@@ -141,3 +198,19 @@ class GroqLLMClient:
                 for tc in msg.tool_calls
             ]
         return LLMResponse(content=content, tool_calls=tool_calls, message=history_msg)
+
+    async def _create(self, kwargs: dict[str, Any]) -> Any:
+        """One API call; a malformed tool call the model generated is retried once."""
+        try:
+            return await self._client.chat.completions.create(**kwargs)
+        except BadRequestError as exc:
+            if "tool_use_failed" not in str(exc):
+                raise
+            logger.warning("[LLM] model produced a malformed tool call; retrying once")
+            return await self._client.chat.completions.create(**kwargs)
+
+    def _for_fallback(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Same request for the fallback model; the reasoning setting is model-specific."""
+        fallback = {k: v for k, v in kwargs.items() if k != "reasoning_effort"}
+        fallback["model"] = self.fallback_model
+        return fallback

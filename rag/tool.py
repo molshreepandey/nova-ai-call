@@ -17,13 +17,14 @@ MAX_TOP_K = 8
 
 
 class KnowledgeBaseTool:
-    """Local tool that searches NovaTech's product and policy documents."""
+    """Local tool that searches NovaWealth's product and policy documents."""
 
     name = "search_knowledge_base"
     description = (
-        "Search NovaTech's internal knowledge base (product specs for NovaBand X200 and "
-        "NovaHub, warranty policy, returns and refunds, shipping, troubleshooting). Use it "
-        "for any question about NovaTech products, prices or policies. Returns text chunks "
+        "Search NovaWealth's internal knowledge base (mutual funds and their fees, exit "
+        "loads and lock-ins; SIPs, redemptions and switches; account opening and KYC; "
+        "advisory and PMS fees; risk, disclaimers and grievances; company contact details). "
+        "Use it for any NovaWealth or investing question. Write the query in English. Returns text chunks "
         "with their source document and section."
     )
     parameters: dict[str, Any] = {
@@ -31,7 +32,7 @@ class KnowledgeBaseTool:
         "properties": {
             "query": {
                 "type": "string",
-                "description": "A focused natural-language search query, e.g. 'X200 warranty period'.",
+                "description": "A focused natural-language search query, e.g. 'ELSS lock-in period'.",
             },
             "top_k": {
                 "type": "integer",

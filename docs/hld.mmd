@@ -1,5 +1,5 @@
-%% NovaTech Voice Agent: High-Level Design
-%% Render: npx -y @mermaid-js/mermaid-cli -i docs/hld.mmd -o docs/hld.png -w 2000 -b white
+%% NovaWealth Voice Agent: High-Level Design
+%% Render: npx -y @mermaid-js/mermaid-cli -i docs/hld.mmd -o docs/hld.png -w 2400 -s 2 -b white
 flowchart LR
     classDef io fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
     classDef voice fill:#ede7f6,stroke:#5e35b1,color:#311b92
@@ -9,86 +9,76 @@ flowchart LR
     classDef ext fill:#fafafa,stroke:#757575,color:#424242,stroke-dasharray:4 3
     classDef store fill:#f1f8e9,stroke:#558b2f,color:#33691e
 
-    USER(["Caller"]):::io
+    USER(["Caller<br/>English or Hindi"]):::io
 
-    subgraph VOICE_IN["Voice input (voice/)"]
+    subgraph CLIENTS["Caller interfaces"]
         direction TB
-        MIC["Microphone"]:::io
-        REC["Recorder<br/>sounddevice<br/>push-to-talk or fixed duration<br/>silence + mic-permission check"]:::voice
-        STT["STT: GroqWhisperSTT<br/>whisper-large-v3-turbo<br/>+ product vocabulary hint"]:::voice
-        MIC --> REC -->|"16 kHz mono WAV"| STT
+        WEB["Browser call UI (web/)<br/>Silero VAD in-browser: speech only,<br/>noise ignored, full duplex + barge-in<br/>side-panel transcript"]:::voice
+        CLI["Terminal (main.py)<br/>sounddevice push-to-talk<br/>or fixed duration"]:::voice
     end
+
+    STT["STT: Groq Whisper<br/>auto-detect until language chosen,<br/>then en (turbo) / hi (large-v3)<br/>+ hallucination filter"]:::voice
 
     subgraph AGENT["Agent process (agent/)"]
         direction TB
-        LOOP["Call loop (main.py)<br/>greeting, hang-up phrases,<br/>error recovery"]:::brain
-        ORCH["Orchestrator<br/>tool-calling loop (max 5 iterations)<br/>session memory, compacted tool results<br/>tool errors returned to LLM"]:::brain
-        LLM{{"LLM router<br/>Groq qwen/qwen3.8-27b<br/>function calling, parallel tool calls"}}:::brain
-        REG["Tool registry<br/>local tools + MCP tools<br/>(schemas discovered at runtime)"]:::brain
-        LOOP -->|"user text"| ORCH
+        CALL["CallSession<br/>asks English or Hindi, locks language<br/>(prompt + STT + voice), hang-up,<br/>spoken apologies on errors"]:::brain
+        ORCH["Orchestrator<br/>tool loop (max 5), tool required on step 1<br/>session memory, compacted tool results<br/>tool errors returned to LLM"]:::brain
+        LLM{{"LLM router (Groq)<br/>qwen/qwen3.8-27b<br/>auto-fallback: gpt-oss-120b<br/>scope + compliance prompt"}}:::brain
+        REG["Tool registry<br/>local + MCP tools<br/>(schemas discovered at runtime)"]:::brain
+        CALL -->|"utterance"| ORCH
         ORCH <-->|"messages + tool schemas /<br/>tool calls or final answer"| LLM
         ORCH -->|"dispatch tool calls"| REG
     end
 
     subgraph RAG["RAG knowledge layer: in-process tool (rag/)"]
         direction TB
-        KBT["search_knowledge_base<br/>(query, top_k)"]:::rag
-        EMB["Embedding model<br/>all-MiniLM-L6-v2 (local)"]:::rag
-        CHROMA[("ChromaDB<br/>storage/chroma<br/>cosine")]:::store
-        CHUNKS["Top-k chunks<br/>+ source file and section"]:::rag
+        KBT["search_knowledge_base<br/>(English query, top_k)"]:::rag
+        EMB["all-MiniLM-L6-v2<br/>(local embeddings)"]:::rag
+        CHROMA[("ChromaDB<br/>storage/chroma")]:::store
+        CHUNKS["Top-k chunks<br/>+ source and section"]:::rag
         KBT --> EMB -->|"query vector"| CHROMA --> CHUNKS
     end
 
-    subgraph MCPSYS["MCP: system tools (separate process)"]
+    subgraph MCPSYS["MCP: system tools (separate process, stdio)"]
         direction TB
-        MCPC["MCPClient<br/>list_tools, call_tool<br/>schema to function format"]:::mcp
+        MCPC["MCPClient<br/>list_tools / call_tool"]:::mcp
         MCPS["FastMCP server<br/>mcp_server/server.py"]:::mcp
         T1["get_current_time"]:::mcp
-        T2["get_weather"]:::mcp
-        T3["calculate<br/>(AST whitelist, no eval)"]:::mcp
-        T4["days_between"]:::mcp
-        T5["read_system_log<br/>(logs/agent.log only)"]:::mcp
-        MCPC <-->|"JSON-RPC over stdio<br/>(spawned subprocess)"| MCPS
-        MCPS --- T1 & T2 & T3 & T4 & T5
+        T2["get_market_status<br/>(NSE/BSE hours)"]:::mcp
+        T3["investment_projection<br/>(SIP / lump sum, lakh-crore)"]:::mcp
+        T4["calculate<br/>(AST whitelist)"]:::mcp
+        T5["days_between<br/>(lock-in periods)"]:::mcp
+        T6["read_system_log"]:::mcp
+        MCPC <-->|"JSON-RPC over stdio"| MCPS
+        MCPS --- T1 & T2 & T3 & T4 & T5 & T6
     end
 
-    METEO[("Open-Meteo<br/>geocoding + forecast API")]:::ext
-    LOGF[("logs/agent.log")]:::ext
-
-    subgraph VOICE_OUT["Voice output (voice/)"]
-        direction TB
-        TTS["TTS: EdgeTTS<br/>sentence-pipelined synthesis"]:::voice
-        SPK["Speaker<br/>sounddevice playback"]:::io
-        TTS -->|"MP3 decoded by libsndfile"| SPK
-    end
-
-    SCREEN["Terminal display<br/>transcript, tool trace,<br/>answer + cited sources"]:::io
+    TTS["TTS: edge-tts<br/>en-IN Neerja / hi-IN Swara<br/>parallel sentence synthesis"]:::voice
 
     subgraph INGEST["Offline ingestion: python -m rag.ingest [--rebuild]"]
         direction LR
-        DOCS["data/docs/*.md<br/>6 NovaTech docs"]:::store
-        CHUNKER["Heading-aware chunker<br/>~550 chars, ~80 overlap<br/>metadata: source, section"]:::rag
-        EMB2["all-MiniLM-L6-v2<br/>embeddings"]:::rag
-        UPSERT["Idempotent upsert<br/>(replace per source)"]:::rag
+        DOCS["data/docs/*.md<br/>6 NovaWealth docs"]:::store
+        CHUNKER["Heading-aware chunker<br/>~550 chars, ~80 overlap"]:::rag
+        EMB2["MiniLM embeddings"]:::rag
+        UPSERT["Idempotent upsert<br/>stale docs removed"]:::rag
         DOCS --> CHUNKER --> EMB2 --> UPSERT
     end
 
-    USER -->|"speaks"| MIC
-    STT -->|"transcript"| LOOP
+    USER -->|"speaks"| WEB & CLI
+    WEB -->|"WAV utterance"| STT
+    CLI -->|"WAV"| STT
+    STT -->|"transcript"| CALL
     REG -->|"local tool"| KBT
-    CHUNKS -->|"tool result (JSON)"| ORCH
+    CHUNKS -->|"tool result"| ORCH
     REG -->|"MCP tool"| MCPC
-    MCPC -->|"tool result (JSON)"| ORCH
-    T2 -.->|"HTTPS"| METEO
-    T5 -.->|"tail N lines"| LOGF
-    ORCH -->|"final answer + trace"| LOOP
-    LOOP -->|"answer text"| TTS
-    LOOP --> SCREEN
-    SPK -->|"hears answer"| USER
+    MCPC -->|"tool result"| ORCH
+    ORCH -->|"answer + trace"| CALL
+    CALL -->|"reply in call language"| TTS
+    TTS -->|"MP3"| WEB & CLI
+    WEB -->|"hears answer"| USER
     UPSERT ==>|"writes"| CHROMA
 
-    style VOICE_IN fill:#f8f7fc,stroke:#b39ddb
-    style VOICE_OUT fill:#f8f7fc,stroke:#b39ddb
+    style CLIENTS fill:#f8f7fc,stroke:#b39ddb
     style AGENT fill:#fffaf3,stroke:#ffb74d
     style RAG fill:#f6fbf6,stroke:#81c784
     style MCPSYS fill:#f3fbfc,stroke:#4dd0e1

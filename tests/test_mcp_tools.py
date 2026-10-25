@@ -3,12 +3,11 @@
 from datetime import datetime
 from pathlib import Path
 
-import httpx
 import pytest
 
 import mcp_server.server as server
 from agent.mcp_client import MCPClient, MCPToolError, mcp_tool_to_openai
-from mcp_server.weather import fetch_current_weather
+from mcp_server.finance import IST, market_status, project_investment
 
 
 # --- get_current_time -------------------------------------------------------
@@ -67,38 +66,53 @@ def test_read_system_log_takes_no_path_argument() -> None:
     assert list(inspect.signature(server.read_system_log).parameters) == ["lines"]
 
 
-# --- get_weather (network mocked) -------------------------------------------
+# --- finance tools ----------------------------------------------------------
 
 
-def _mock_open_meteo(request: httpx.Request) -> httpx.Response:
-    if "geocoding" in request.url.host:
-        if request.url.params["name"] == "Nowhere":
-            return httpx.Response(200, json={})
-        return httpx.Response(
-            200,
-            json={"results": [{"name": "Mumbai", "admin1": "Maharashtra", "country": "India",
-                               "latitude": 19.07, "longitude": 72.88}]},
-        )
-    return httpx.Response(
-        200,
-        json={"current": {"time": "2026-10-25T21:45", "temperature_2m": 30.3, "apparent_temperature": 32.8,
-                          "relative_humidity_2m": 52, "weather_code": 0, "wind_speed_10m": 7.7,
-                          "wind_direction_10m": 357}},
+def test_sip_projection_matches_closed_form() -> None:
+    result = server.investment_projection(annual_return_pct=12, years=10, monthly_sip=10_000)
+    r, n = 0.01, 120
+    expected = 10_000 * ((1 + r) ** n - 1) / r * (1 + r)  # annuity due
+    assert result["total_invested_inr"] == 1_200_000
+    assert result["estimated_value_inr"] == pytest.approx(expected, abs=0.01)  # rounded to paise
+    assert "not guaranteed" in result["disclaimer"]
+
+
+def test_lumpsum_and_step_up_projection() -> None:
+    assert project_investment(lumpsum=100_000, annual_return_pct=12, years=10).estimated_value == pytest.approx(  # noqa: E501
+        100_000 * 1.01**120, abs=0.01
     )
+    stepped = project_investment(monthly_sip=5_000, annual_return_pct=12, years=2, annual_step_up_pct=10)
+    assert stepped.total_invested == 5_000 * 12 + 5_500 * 12
 
 
-async def test_weather_parses_open_meteo_response() -> None:
-    async with httpx.AsyncClient(transport=httpx.MockTransport(_mock_open_meteo)) as client:
-        weather = await fetch_current_weather("Mumbai", client)
-    assert weather["city"] == "Mumbai"
-    assert weather["temperature_c"] == 30.3
-    assert weather["conditions"] == "clear sky"
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"annual_return_pct": 12, "years": 10},  # no amount
+        {"monthly_sip": -1, "annual_return_pct": 12, "years": 10},
+        {"monthly_sip": 1000, "annual_return_pct": 95, "years": 10},
+        {"monthly_sip": 1000, "annual_return_pct": 12, "years": 500},
+    ],
+)
+def test_projection_rejects_bad_input(kwargs: dict) -> None:
+    with pytest.raises(ValueError):
+        project_investment(**kwargs)
 
 
-async def test_weather_unknown_city() -> None:
-    async with httpx.AsyncClient(transport=httpx.MockTransport(_mock_open_meteo)) as client:
-        with pytest.raises(ValueError, match="could not find"):
-            await fetch_current_weather("Nowhere", client)
+@pytest.mark.parametrize(
+    ("when", "status", "next_open_day"),
+    [
+        (datetime(2026, 10, 26, 10, 0), "open", ""),
+        (datetime(2026, 10, 26, 9, 5), "pre-open session", "Monday"),
+        (datetime(2026, 10, 23, 16, 0), "closed", "Monday"),  # Friday evening
+        (datetime(2026, 10, 25, 12, 0), "closed", "Monday"),  # Sunday
+    ],
+)
+def test_market_status(when: datetime, status: str, next_open_day: str) -> None:
+    result = market_status(when.replace(tzinfo=IST))
+    assert result["status"] == status
+    assert result["next_open"].startswith(next_open_day)
 
 
 # --- schema conversion ------------------------------------------------------
@@ -129,7 +143,8 @@ def test_mcp_schema_converts_to_function_format() -> None:
 async def test_stdio_session_lists_and_calls_tools() -> None:
     async with MCPClient() as mcp:
         assert set(mcp.tool_names) == {
-            "get_current_time", "get_weather", "calculate", "days_between", "read_system_log"
+            "get_current_time", "get_market_status", "investment_projection",
+            "calculate", "days_between", "read_system_log",
         }
         assert all(t["function"]["parameters"]["type"] == "object" for t in mcp.openai_tools())
         assert '"result":147.0' in await mcp.call_tool("calculate", {"expression": "sqrt(1764) * 3.5"})

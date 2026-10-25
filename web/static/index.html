@@ -3,211 +3,550 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NovaTech Support Call</title>
+<title>NovaWealth Investor Support</title>
 <style>
   :root {
-    --bg: #f6f7fb; --panel: #ffffff; --text: #1d2433; --muted: #6b7385; --border: #e3e6ee;
-    --accent: #4f46e5; --accent-text: #ffffff; --user: #e8f0fe; --agent: #f3f0ff;
-    --rag: #2e7d32; --mcp: #00838f; --danger: #d93025; --ok: #188038;
+    --bg: #f4f2ec; --surface: #ffffff; --surface-2: #faf9f5; --border: #e4e0d6;
+    --text: #15213b; --muted: #5d667a; --faint: #8a91a1;
+    --gold: #a07a2c; --gold-soft: rgba(160, 122, 44, .14);
+    --teal: #0e7c7b; --teal-soft: rgba(14, 124, 123, .14);
+    --danger: #b3261e; --shadow: 0 10px 30px rgba(21, 33, 59, .08);
+    --user-bg: #eef3f4; --agent-bg: #faf6ec;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #12141a; --panel: #1b1e27; --text: #e6e8ee; --muted: #9aa1b2; --border: #2c303c;
-      --accent: #8b85ff; --accent-text: #12141a; --user: #1f2a44; --agent: #2a2342;
-      --rag: #7bd389; --mcp: #5fd4e0; --danger: #ff6b6b; --ok: #6fd08c;
+      --bg: #0a0f1c; --surface: #111a2e; --surface-2: #0d1526; --border: #1f2b45;
+      --text: #e9edf5; --muted: #a0a9bd; --faint: #6f7a91;
+      --gold: #d8b66e; --gold-soft: rgba(216, 182, 110, .14);
+      --teal: #5ad1c8; --teal-soft: rgba(90, 209, 200, .14);
+      --danger: #f08080; --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+      --user-bg: #13223a; --agent-bg: #1a1f2e;
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 820px; margin: 0 auto; padding: 24px 16px 140px; }
-  header h1 { font-size: 20px; margin: 0; }
-  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
-  #log { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
-  .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; border: 1px solid var(--border); }
-  .msg.user { background: var(--user); align-self: flex-end; }
-  .msg.agent { background: var(--agent); align-self: flex-start; }
-  .msg .who { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
-  .trace { margin-top: 8px; font-size: 12px; color: var(--muted); overflow-x: auto; }
-  .trace table { border-collapse: collapse; width: 100%; margin-top: 4px; }
-  .trace td { padding: 3px 6px; border-top: 1px solid var(--border); vertical-align: top;
-              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
-  .trace td.args { white-space: normal; overflow-wrap: anywhere; min-width: 12ch; }
-  .tag { font-weight: 700; }
-  .tag.local { color: var(--rag); } .tag.mcp { color: var(--mcp); }
-  .ok { color: var(--ok); } .fail { color: var(--danger); }
-  .sources { margin-top: 6px; font-size: 12px; color: var(--muted); }
-  footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel);
-           border-top: 1px solid var(--border); padding: 12px 16px; }
-  .controls { max-width: 820px; margin: 0 auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  button { font: inherit; border-radius: 999px; border: 1px solid var(--border); padding: 10px 18px;
-           background: var(--panel); color: var(--text); cursor: pointer; }
-  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
-  button.recording { background: var(--danger); color: #fff; border-color: var(--danger); }
-  button:disabled { opacity: .5; cursor: default; }
-  form { display: flex; flex: 1; gap: 8px; min-width: 220px; }
-  input[type=text] { flex: 1; min-width: 0; font: inherit; padding: 10px 14px; border-radius: 999px;
-                     border: 1px solid var(--border); background: var(--bg); color: var(--text); }
-  #status { width: 100%; font-size: 12px; color: var(--muted); max-width: 820px; margin: 6px auto 0; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Devanagari", sans-serif;
+  }
+  .app { display: grid; grid-template-columns: minmax(0, 1fr) 400px; height: 100vh; }
+
+  /* Stage */
+  .stage { display: flex; flex-direction: column; padding: 28px 40px; min-height: 0; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .brand { display: flex; align-items: baseline; gap: 12px; }
+  .wordmark { font-family: Georgia, "Times New Roman", serif; font-size: 24px; letter-spacing: .3px; }
+  .wordmark b { color: var(--gold); font-weight: 600; }
+  .tagline { color: var(--muted); font-size: 13px; }
+  .pills { display: flex; gap: 8px; align-items: center; }
+  .pill {
+    font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--muted); background: var(--surface); white-space: nowrap;
+  }
+  .pill.live { color: var(--teal); border-color: var(--teal); }
+  .pill.live::before {
+    content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--teal); margin-right: 7px; vertical-align: 1px; animation: blink 1.6s infinite;
+  }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  .center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; min-height: 0; }
+  .orb-wrap { position: relative; width: min(340px, 70vw); aspect-ratio: 1; }
+  canvas#orb { width: 100%; height: 100%; display: block; cursor: default; }
+  canvas#orb.interruptible { cursor: pointer; }
+  .state { font-size: 22px; font-weight: 600; letter-spacing: .2px; min-height: 1.4em; text-align: center; }
+  .hint { color: var(--muted); font-size: 14px; text-align: center; max-width: 440px; min-height: 2.6em; }
+  .actions { display: flex; gap: 12px; }
+  .btn {
+    font: inherit; font-weight: 600; font-size: 15px; padding: 13px 34px; border-radius: 999px;
+    border: 1px solid transparent; cursor: pointer; transition: transform .08s ease, opacity .2s;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.start { background: var(--gold); color: #fff; box-shadow: var(--shadow); }
+  @media (prefers-color-scheme: dark) { .btn.start { color: #0a0f1c; } }
+  .btn.end { background: transparent; color: var(--danger); border-color: var(--danger); }
+  .disclaimer { color: var(--faint); font-size: 12px; text-align: center; margin-top: 12px; }
+
+  /* Transcript side panel */
+  .panel {
+    display: flex; flex-direction: column; min-height: 0; background: var(--surface);
+    border-left: 1px solid var(--border);
+  }
+  .panel header { padding: 22px 24px 14px; border-bottom: 1px solid var(--border); }
+  .panel h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .panel header p { margin: 2px 0 0; color: var(--faint); font-size: 12px; }
+  .transcript { flex: 1; overflow-y: auto; padding: 18px 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+  .empty { margin: auto; color: var(--faint); font-size: 14px; text-align: center; max-width: 240px; }
+  .entry { border-radius: 14px; padding: 10px 14px; background: var(--agent-bg); border: 1px solid var(--border); }
+  .entry.user { background: var(--user-bg); margin-left: 28px; }
+  .entry.agent { margin-right: 28px; }
+  .meta { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--faint); margin-bottom: 3px; }
+  .who { font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
+  .entry.agent .who { color: var(--gold); }
+  .entry.user .who { color: var(--teal); }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .sources { margin-top: 6px; font-size: 11px; color: var(--faint); }
+  .entry.pending .text { color: var(--faint); font-style: italic; }
+
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto minmax(260px, 45vh); height: auto; min-height: 100vh; }
+    .stage { padding: 20px 16px; }
+    .center { padding: 18px 0; }
+    .panel { border-left: none; border-top: 1px solid var(--border); }
+    .tagline { display: none; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1>NovaTech Support</h1>
-    <p>Voice agent with a RAG knowledge base and MCP system tools. Press <b>Call</b>, then click the mic to talk.</p>
-  </header>
-  <div id="log" aria-live="polite"></div>
-</main>
-<footer>
-  <div class="controls">
-    <button id="call" class="primary">📞 Call</button>
-    <button id="mic" disabled>🎙️ Talk</button>
-    <form id="textForm">
-      <input id="text" type="text" placeholder="…or type a question" disabled autocomplete="off">
-      <button id="send" type="submit" disabled>Send</button>
-    </form>
-  </div>
-  <div id="status">Not in a call.</div>
-</footer>
+<div class="app">
+  <section class="stage">
+    <div class="topbar">
+      <div class="brand">
+        <div class="wordmark">Nova<b>Wealth</b></div>
+        <div class="tagline">Investor Support</div>
+      </div>
+      <div class="pills">
+        <span class="pill" id="lang" hidden></span>
+        <span class="pill" id="callPill">Not connected</span>
+      </div>
+    </div>
+
+    <div class="center">
+      <div class="orb-wrap"><canvas id="orb" width="680" height="680" aria-hidden="true"></canvas></div>
+      <div class="state" id="state">Ready when you are</div>
+      <div class="hint" id="hint">Start a call and simply speak. Nova listens automatically and answers in English or Hindi.</div>
+      <div class="actions">
+        <button class="btn start" id="callBtn">Start call</button>
+      </div>
+    </div>
+
+    <div class="disclaimer">
+      Mutual fund investments are subject to market risks. Nova shares general information, not personal investment advice.
+      NovaWealth is a fictional company for demonstration.
+    </div>
+  </section>
+
+  <aside class="panel">
+    <header>
+      <h2>Conversation</h2>
+      <p>Everything said on this call</p>
+    </header>
+    <div class="transcript" id="transcript" aria-live="polite">
+      <div class="empty" id="empty">The transcript of your call will appear here.</div>
+    </div>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/bundle.min.js"></script>
 <script>
+"use strict";
+// ---------- Voice activity detection ----------
+// Primary: Silero VAD (a small neural model, run in the browser via @ricky0123/vad-web)
+// scores every 32 ms frame for *human speech*, so fans, clicks, typing and music are
+// ignored. A frame counts as speech only if it is speech-like AND loud enough.
+// Fallback (model failed to load): an energy detector with an adaptive noise floor.
+const VAD = {
+  speechProb: 0.6,        // Silero probability to count a frame as speech ...
+  bargeProb: 0.85,        // ... and while Nova talks, to interrupt her
+  keepProb: 0.35,         // once speaking, frames above this keep the utterance going
+  minLevel: 0.004,        // speech must also be above this absolute level ...
+  levelRatio: 1.5,        // ... and above room noise * levelRatio
+  bargeLevelRatio: 4.0,   // interrupting needs a clearly louder (closer) voice than her echo
+  bargeMinLevel: 0.02,
+  startFrames: 3,         // consecutive speech frames to start (~100 ms)
+  bargeFrames: 6,         // ... or ~190 ms to interrupt
+  hangoverMs: 700,        // silence that ends an utterance
+  minSpeechMs: 300,       // shorter bursts are discarded
+  maxUtteranceMs: 30000,
+  prerollMs: 400,         // audio kept from just before speech was detected
+  resumeDelayMs: 300,     // pause after Nova speaks, so her tail isn't picked up
+  // Energy-only fallback thresholds
+  startRatio: 3.0, startMin: 0.015, endRatio: 1.8, endMin: 0.008, bargeRatio: 5.0, bargeMin: 0.03,
+};
+const VAD_ASSETS = "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/";
+const ORT_ASSETS = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/";
+
 const $ = (id) => document.getElementById(id);
-const log = $("log"), statusEl = $("status");
-let sessionId = null, recorder = null, chunks = [], stream = null, busy = false;
+const ui = { state: $("state"), hint: $("hint"), btn: $("callBtn"), pill: $("callPill"), lang: $("lang"),
+             transcript: $("transcript"), empty: $("empty"), orb: $("orb") };
+
+let mode = "idle";            // idle | connecting | listening | hearing | thinking | speaking
+let sessionId = null, language = null, callStart = 0, timer = null;
+let micStream = null, micCtx = null, micNode = null, sileroVad = null, frameRate = 16000;
+let outCtx = null, outAnalyser = null, micLevel = 0, outLevel = 0;
+let noise = 0.003, loudFrames = 0, speaking = false;
+let preroll = [], capture = [], voicedMs = 0, silenceMs = 0, capturedMs = 0;
 const player = new Audio();
 
-function setStatus(text) { statusEl.textContent = text; }
-function setInCall(inCall) {
-  $("call").textContent = inCall ? "End call" : "📞 Call";
-  $("call").classList.toggle("primary", !inCall);
-  for (const id of ["mic", "text", "send"]) $(id).disabled = !inCall;
+const TEXT = {
+  en: { listening: "Listening", hearing: "Hearing you", thinking: "Thinking", speaking: "Speaking",
+        hintListen: "Go ahead and ask your question.", hintSpeak: "Just start talking to interrupt." },
+  hi: { listening: "सुन रही हूँ", hearing: "आपको सुन रही हूँ", thinking: "सोच रही हूँ", speaking: "बोल रही हूँ",
+        hintListen: "अपना सवाल पूछिए।", hintSpeak: "बीच में कभी भी बोल सकते हैं।" },
+};
+const t = (key) => TEXT[language || "en"][key];
+
+// ---------- UI state ----------
+function setMode(next) {
+  mode = next;
+  ui.orb.classList.toggle("interruptible", next === "speaking");
+  const map = {
+    idle: ["Ready when you are", "Start a call and simply speak. Nova listens automatically and answers in English or Hindi."],
+    connecting: ["Connecting", "Allow microphone access if your browser asks."],
+    listening: [t("listening"), language ? t("hintListen") : "Say English or Hindi."],
+    hearing: [t("hearing"), ""],
+    thinking: [t("thinking"), ""],
+    speaking: [t("speaking"), t("hintSpeak")],
+  };
+  const [state, hint] = map[next];
+  ui.state.textContent = state;
+  ui.hint.textContent = hint;
 }
 
-function el(tag, cls, text) {
-  const node = document.createElement(tag);
-  if (cls) node.className = cls;
-  if (text !== undefined) node.textContent = text;   // textContent: never inject HTML
-  return node;
+function setLanguage(code) {
+  language = code || null;
+  ui.lang.hidden = !language;
+  ui.lang.textContent = language === "hi" ? "हिंदी" : "English";
+  document.documentElement.lang = language === "hi" ? "hi" : "en";
 }
 
-function addMessage(who, text, result) {
-  const box = el("div", `msg ${who}`);
-  box.append(el("div", "who", who === "user" ? "You" : "Nova"), el("div", "", text));
-  if (result && result.tool_calls && result.tool_calls.length) {
-    const trace = el("div", "trace", "Tool calls");
-    const table = el("table");
-    for (const call of result.tool_calls) {
-      const row = table.insertRow();
-      const via = el("span", `tag ${call.provider}`, call.provider === "local" ? "RAG" : "MCP");
-      row.insertCell().append(via);
-      row.insertCell().textContent = call.name;
-      const args = row.insertCell();
-      args.className = "args";
-      args.textContent = JSON.stringify(call.arguments);
-      row.insertCell().textContent = `${call.duration_ms} ms`;
-      row.insertCell().append(el("span", call.ok ? "ok" : "fail", call.ok ? "✓" : "✗"));
-    }
-    trace.append(table);
-    box.append(trace);
+function clock() {
+  const s = Math.floor((Date.now() - callStart) / 1000);
+  ui.pill.textContent = `Live  ${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function addEntry(who, text, sources) {
+  ui.empty.hidden = true;
+  const entry = document.createElement("div");
+  entry.className = `entry ${who}`;
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  const name = document.createElement("span");
+  name.className = "who";
+  name.textContent = who === "user" ? "You" : "Nova";
+  const time = document.createElement("span");
+  time.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  meta.append(name, time);
+  const body = document.createElement("div");
+  body.className = "text";
+  body.textContent = text;                       // textContent: never inject HTML
+  entry.append(meta, body);
+  if (sources && sources.length) {
+    const src = document.createElement("div");
+    src.className = "sources";
+    src.textContent = "Sources: " + sources.map((s) => s.replace(/\.md/, "")).join(" · ");
+    entry.append(src);
   }
-  if (result && result.sources && result.sources.length) {
-    box.append(el("div", "sources", "Sources: " + result.sources.join("; ")));
-  }
-  log.append(box);
-  box.scrollIntoView({ behavior: "smooth", block: "end" });
+  ui.transcript.append(entry);
+  ui.transcript.scrollTop = ui.transcript.scrollHeight;
+  return entry;
 }
 
-async function play(b64) {
-  if (!b64) return;
-  player.src = "data:audio/mpeg;base64," + b64;
-  try { await player.play(); } catch (e) { console.warn("autoplay blocked", e); }
-}
-
+// ---------- Call lifecycle ----------
 async function startCall() {
-  setStatus("Connecting…");
-  const res = await fetch("/api/start", { method: "POST" });
-  if (!res.ok) { setStatus("Could not start the call."); return; }
-  const data = await res.json();
-  sessionId = data.session_id;
-  setInCall(true);
-  addMessage("agent", data.greeting);
-  setStatus("In call. Click 🎙️ Talk, ask your question, then click again to send.");
-  play(data.audio);
-}
-
-async function endCall() {
-  stopStream();
-  if (sessionId) {
-    const form = new FormData(); form.append("session_id", sessionId);
-    fetch("/api/end", { method: "POST", body: form });
-  }
-  sessionId = null; setInCall(false); setStatus("Call ended.");
-}
-
-async function sendTurn(form) {
-  if (busy) return;
-  busy = true; $("mic").disabled = true; $("send").disabled = true;
-  setStatus("Thinking…");
-  form.append("session_id", sessionId);
+  ui.btn.disabled = true;
+  setMode("connecting");
   try {
-    const res = await fetch("/api/turn", { method: "POST", body: form });
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
-    if (data.transcript) addMessage("user", data.transcript);
-    addMessage("agent", data.answer, data);
-    play(data.audio);
-    if (data.ended) { sessionId = null; setInCall(false); setStatus("Call ended."); return; }
-    setStatus("In call.");
+    await openAudio();
   } catch (e) {
-    setStatus("Something went wrong: " + e.message);
-  } finally {
-    busy = false;
-    if (sessionId) { $("mic").disabled = false; $("send").disabled = false; }
-  }
-}
-
-function stopStream() {
-  if (stream) stream.getTracks().forEach((t) => t.stop());
-  stream = null;
-}
-
-async function toggleRecording() {
-  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
-  player.pause();   // barge-in lite: stop the agent talking when the caller talks
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (e) {
-    setStatus("Microphone blocked. Allow mic access for this page (or type instead).");
+    setMode("idle");
+    ui.hint.textContent = "Microphone access was blocked. Allow it in your browser's site settings and try again.";
+    ui.btn.disabled = false;
     return;
   }
-  const mime = ["audio/webm", "audio/ogg", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
-  recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-  chunks = [];
-  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-  recorder.onstop = () => {
-    stopStream();
-    $("mic").classList.remove("recording"); $("mic").textContent = "🎙️ Talk";
-    const type = recorder.mimeType || "audio/webm";
-    const ext = type.includes("ogg") ? "ogg" : type.includes("mp4") ? "m4a" : "webm";
-    const form = new FormData();
-    form.append("audio", new Blob(chunks, { type }), `speech.${ext}`);
-    sendTurn(form);
-  };
-  recorder.start();
-  $("mic").classList.add("recording"); $("mic").textContent = "■ Stop & send";
-  setStatus("Listening… click again when you're done.");
+  ui.transcript.querySelectorAll(".entry").forEach((el) => el.remove());
+  ui.empty.hidden = false;
+  setLanguage(null);
+  try {
+    const res = await fetch("/api/call", { method: "POST" });
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    sessionId = data.session_id;
+    callStart = Date.now(); clock(); timer = setInterval(clock, 1000);
+    ui.pill.classList.add("live");
+    ui.btn.textContent = "End call"; ui.btn.className = "btn end"; ui.btn.disabled = false;
+    handleReply(data);
+  } catch (e) {
+    closeAudio(); setMode("idle");
+    ui.hint.textContent = "Could not reach the agent. Is the server running?";
+    ui.btn.disabled = false;
+  }
 }
 
-$("call").onclick = () => (sessionId ? endCall() : startCall());
-$("mic").onclick = toggleRecording;
-$("textForm").onsubmit = (e) => {
-  e.preventDefault();
-  const text = $("text").value.trim();
-  if (!text || !sessionId) return;
-  $("text").value = "";
-  const form = new FormData(); form.append("text", text);
-  sendTurn(form);
-};
+function endCall(notifyServer = true) {
+  if (notifyServer && sessionId) {
+    const form = new FormData(); form.append("session_id", sessionId);
+    fetch("/api/end", { method: "POST", body: form }).catch(() => {});
+  }
+  sessionId = null;
+  player.pause();
+  closeAudio();
+  clearInterval(timer);
+  ui.pill.classList.remove("live"); ui.pill.textContent = "Call ended";
+  ui.btn.textContent = "Start call"; ui.btn.className = "btn start"; ui.btn.disabled = false;
+  setMode("idle");
+}
+
+function handleReply(data) {
+  if (data.language) setLanguage(data.language);
+  if (data.transcript) addEntry("user", data.transcript);
+  if (data.reply) addEntry("agent", data.reply, data.sources);
+  const after = () => {
+    if (data.ended) { endCall(false); return; }
+    setTimeout(() => { if (sessionId && mode !== "hearing") resumeListening(); }, VAD.resumeDelayMs);
+  };
+  if (data.audio) {
+    setMode("speaking");
+    player.src = "data:audio/mpeg;base64," + data.audio;
+    player.onended = after;
+    player.play().catch(after);
+  } else {
+    after();
+  }
+}
+
+function resumeListening() {
+  speaking = false; loudFrames = 0; capture = []; preroll = [];
+  setMode("listening");
+}
+
+async function sendUtterance(samples, sampleRate) {
+  setMode("thinking");
+  const pending = addEntry("user", "…");
+  pending.classList.add("pending");
+  const form = new FormData();
+  form.append("session_id", sessionId);
+  form.append("audio", encodeWav(samples, sampleRate), "speech.wav");
+  try {
+    const res = await fetch("/api/turn", { method: "POST", body: form });
+    pending.remove();
+    if (res.status === 404) { endCall(false); return; }
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    if (data.ignored) { resumeListening(); return; }
+    handleReply(data);
+  } catch (e) {
+    pending.remove();
+    if (sessionId) { ui.hint.textContent = "Connection problem. Listening again."; resumeListening(); }
+  }
+}
+
+// ---------- Audio in (mic + VAD) and out (playback level) ----------
+async function openAudio() {
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+  });
+  try {
+    await startSilero();
+  } catch (e) {
+    console.warn("Silero VAD unavailable, using the energy detector instead:", e);
+    sileroVad = null;
+    await startEnergyTap();
+  }
+
+  if (!outCtx) {
+    outCtx = new AudioContext();
+    outAnalyser = outCtx.createAnalyser(); outAnalyser.fftSize = 512;
+    outCtx.createMediaElementSource(player).connect(outAnalyser);
+    outAnalyser.connect(outCtx.destination);
+  }
+  await outCtx.resume();
+}
+
+async function startSilero() {
+  if (!window.vad || !window.ort) throw new Error("VAD scripts did not load");
+  sileroVad = await vad.MicVAD.new({
+    model: "v5",
+    baseAssetPath: VAD_ASSETS,
+    onnxWASMBasePath: ORT_ASSETS,
+    getStream: async () => micStream,
+    pauseStream: async () => {},
+    resumeStream: async () => micStream,
+    startOnLoad: true,
+    // We segment utterances ourselves (speech probability + loudness + barge-in rules),
+    // so only the per-frame callback is used. Frames are 512 samples at 16 kHz.
+    onFrameProcessed: (probs, frame) => onFrame(frame, probs.isSpeech),
+    onSpeechStart: () => {}, onSpeechEnd: () => {}, onVADMisfire: () => {}, onSpeechRealStart: () => {},
+  });
+  frameRate = 16000;
+  console.info("Voice detection: Silero VAD");
+}
+
+async function startEnergyTap() {
+  try { micCtx = new AudioContext({ sampleRate: 16000 }); } catch { micCtx = new AudioContext(); }
+  const worklet = `class Tap extends AudioWorkletProcessor {
+    constructor() { super(); this.buf = new Float32Array(512); this.n = 0; }
+    process(inputs) {
+      const ch = inputs[0][0];
+      if (ch) for (let i = 0; i < ch.length; i++) {
+        this.buf[this.n++] = ch[i];
+        if (this.n === this.buf.length) { this.port.postMessage(this.buf.slice()); this.n = 0; }
+      }
+      return true;
+    }
+  }
+  registerProcessor("tap", Tap);`;
+  const url = URL.createObjectURL(new Blob([worklet], { type: "application/javascript" }));
+  await micCtx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+  micNode = new AudioWorkletNode(micCtx, "tap");
+  micNode.port.onmessage = (e) => onFrame(e.data, null);
+  const mute = micCtx.createGain(); mute.gain.value = 0;
+  micCtx.createMediaStreamSource(micStream).connect(micNode);
+  micNode.connect(mute).connect(micCtx.destination);
+  frameRate = micCtx.sampleRate;
+  console.info("Voice detection: energy fallback");
+}
+
+function closeAudio() {
+  if (sileroVad) sileroVad.destroy();
+  if (micStream) micStream.getTracks().forEach((tr) => tr.stop());
+  if (micCtx) micCtx.close();
+  sileroVad = micStream = micCtx = micNode = null;
+  micLevel = 0;
+}
+
+// One frame of mic audio. ``prob`` is Silero's speech probability, or null in fallback mode.
+function onFrame(frame, prob) {
+  let sum = 0;
+  for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+  const rms = Math.sqrt(sum / frame.length);
+  micLevel = micLevel * 0.6 + rms * 0.4;
+  const frameMs = (frame.length / frameRate) * 1000;
+
+  preroll.push(frame);
+  while (preroll.length * frameMs > VAD.prerollMs) preroll.shift();
+  // Full duplex: the caller can speak while Nova is talking (barge-in). Only the
+  // "thinking" gap ignores the mic, so one question is answered at a time.
+  if (mode !== "listening" && mode !== "hearing" && mode !== "speaking") return;
+  const bargeIn = mode === "speaking";
+
+  let startsSpeech, keepsSpeech;
+  if (prob !== null) {
+    const level = bargeIn ? Math.max(noise * VAD.bargeLevelRatio, VAD.bargeMinLevel)
+                          : Math.max(noise * VAD.levelRatio, VAD.minLevel);
+    startsSpeech = prob >= (bargeIn ? VAD.bargeProb : VAD.speechProb) && rms > level;
+    keepsSpeech = prob >= VAD.keepProb;
+  } else {
+    const startThr = bargeIn ? Math.max(noise * VAD.bargeRatio, VAD.bargeMin)
+                             : Math.max(noise * VAD.startRatio, VAD.startMin);
+    startsSpeech = rms > startThr;
+    keepsSpeech = rms > Math.max(noise * VAD.endRatio, VAD.endMin);
+  }
+
+  if (!speaking) {
+    if (startsSpeech) {
+      if (++loudFrames >= (bargeIn ? VAD.bargeFrames : VAD.startFrames)) {
+        if (bargeIn) { player.onended = null; player.pause(); }   // stop talking, start listening
+        speaking = true; capture = preroll.slice(); voicedMs = loudFrames * frameMs;
+        silenceMs = 0; capturedMs = capture.length * frameMs; setMode("hearing");
+      }
+    } else {
+      loudFrames = 0;
+      // Learn the room's noise level from non-speech frames, never while Nova's voice may leak in.
+      const isQuiet = prob !== null ? prob < 0.3 : rms < Math.max(noise * VAD.startRatio, VAD.startMin);
+      if (!bargeIn && isQuiet) noise = noise * 0.95 + rms * 0.05;
+    }
+    return;
+  }
+
+  capture.push(frame); capturedMs += frameMs;
+  if (keepsSpeech) { voicedMs += frameMs; silenceMs = 0; } else { silenceMs += frameMs; }
+  if (silenceMs >= VAD.hangoverMs || capturedMs >= VAD.maxUtteranceMs) {
+    speaking = false; loudFrames = 0;
+    if (voicedMs < VAD.minSpeechMs) { capture = []; setMode("listening"); return; }
+    const total = capture.reduce((n, f) => n + f.length, 0);
+    const samples = new Float32Array(total);
+    let offset = 0;
+    for (const f of capture) { samples.set(f, offset); offset += f.length; }
+    capture = [];
+    sendUtterance(samples, frameRate);
+  }
+}
+
+function encodeWav(samples, rate) {
+  if (rate !== 16000) {                                    // linear resample to 16 kHz
+    const ratio = rate / 16000, out = new Float32Array(Math.floor(samples.length / ratio));
+    for (let i = 0; i < out.length; i++) {
+      const x = i * ratio, i0 = Math.floor(x), i1 = Math.min(i0 + 1, samples.length - 1);
+      out[i] = samples[i0] + (samples[i1] - samples[i0]) * (x - i0);
+    }
+    samples = out; rate = 16000;
+  }
+  const buffer = new ArrayBuffer(44 + samples.length * 2), v = new DataView(buffer);
+  const str = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  str(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); str(8, "WAVE");
+  str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
+// ---------- Orb visualisation ----------
+const ctx2d = ui.orb.getContext("2d");
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+let phase = 0, shown = 0;
+
+function readOutLevel() {
+  if (!outAnalyser || mode !== "speaking") return 0;
+  const data = new Uint8Array(outAnalyser.fftSize);
+  outAnalyser.getByteTimeDomainData(data);
+  let sum = 0;
+  for (const x of data) { const d = (x - 128) / 128; sum += d * d; }
+  return Math.sqrt(sum / data.length);
+}
+
+function draw() {
+  const w = ui.orb.width, h = ui.orb.height, cx = w / 2, cy = h / 2, base = w * 0.26;
+  ctx2d.clearRect(0, 0, w, h);
+  phase += 0.02;
+  outLevel = outLevel * 0.7 + readOutLevel() * 0.3;
+  const live = mode === "listening" || mode === "hearing";
+  const target = mode === "speaking" ? outLevel * 3.2 : live ? micLevel * 6 : 0;
+  shown += (Math.min(target, 1) - shown) * 0.2;
+
+  const accent = mode === "speaking" || mode === "thinking" ? css("--gold") : mode === "idle" ? css("--faint") : css("--teal");
+  const breathe = mode === "idle" ? 0.02 * Math.sin(phase) : 0.035 * Math.sin(phase * 1.6);
+  const r = base * (1 + breathe + shown * 0.35);
+
+  // Soft halo rings
+  for (let i = 3; i >= 1; i--) {
+    ctx2d.beginPath();
+    ctx2d.arc(cx, cy, r + i * (14 + shown * 26), 0, Math.PI * 2);
+    ctx2d.globalAlpha = 0.06 * (4 - i) * (mode === "idle" ? 0.6 : 1);
+    ctx2d.fillStyle = accent; ctx2d.fill();
+  }
+  ctx2d.globalAlpha = 1;
+
+  // Core
+  const grad = ctx2d.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.1, cx, cy, r);
+  grad.addColorStop(0, "rgba(255, 255, 255, 0.9)");   // specular highlight in both themes
+  grad.addColorStop(1, accent);
+  ctx2d.beginPath(); ctx2d.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx2d.fillStyle = grad; ctx2d.globalAlpha = mode === "idle" ? 0.55 : 0.9; ctx2d.fill();
+  ctx2d.globalAlpha = 1;
+
+  // Thinking: rotating arc
+  if (mode === "thinking" || mode === "connecting") {
+    ctx2d.beginPath();
+    ctx2d.arc(cx, cy, r + 22, phase * 3, phase * 3 + Math.PI * 0.6);
+    ctx2d.strokeStyle = accent; ctx2d.lineWidth = 6; ctx2d.lineCap = "round"; ctx2d.stroke();
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+// ---------- Wiring ----------
+ui.btn.addEventListener("click", () => (sessionId ? endCall() : startCall()));
+ui.orb.addEventListener("click", () => {
+  if (mode === "speaking") { player.pause(); player.onended = null; resumeListening(); }  // barge-in
+});
 </script>
 </body>
 </html>

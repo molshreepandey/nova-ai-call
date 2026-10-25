@@ -1,9 +1,12 @@
-"""NovaTech voice agent: CLI entry point and the "call" loop.
+"""NovaWealth voice agent: CLI entry point and the "call" loop.
 
     python main.py                 # voice call, push-to-talk (Enter to start/stop)
     python main.py --duration 6    # voice call, fixed 6-second recordings
     python main.py --text          # type instead of speaking (add --tts to hear answers)
+    python main.py --lang hi       # skip the language question (en or hi)
     python main.py --list-devices  # show audio devices
+
+Every call opens by asking "English or Hindi?"; the rest of the call follows that choice.
 """
 
 from __future__ import annotations
@@ -14,39 +17,37 @@ import logging
 from contextlib import AsyncExitStack
 from typing import Protocol
 
-from groq import RateLimitError
-
+from agent.call import CallSession
+from agent.language import LANGUAGES, Language
 from agent.llm_client import GroqLLMClient
 from agent.mcp_client import MCPClient
 from agent.orchestrator import Orchestrator
-from agent.prompts import GOODBYE, GREETING, is_hangup
 from config import ConfigError, settings, setup_logging
 from display import console, show_agent, show_banner, show_error, show_turn, show_user
 from rag.retriever import Retriever
 from rag.tool import KnowledgeBaseTool
 from voice.recorder import MicrophoneError, Recorder
-from voice.stt import GroqWhisperSTT, SpeechToText
+from voice.stt import GroqWhisperSTT, SpeechToText, is_probable_hallucination
 from voice.tts import EdgeTTS, SilentTTS, TextToSpeech
 
 logger = logging.getLogger("main")
-
-NOT_HEARD = "Sorry, I didn't catch that. Could you say it again?"
-TURN_FAILED = "Sorry, I ran into a problem answering that. Could you try again?"
-RATE_LIMITED = "Sorry, I'm handling a lot of requests right now. Please ask me again in a few seconds."
 
 
 class Listener(Protocol):
     """Source of caller utterances."""
 
-    async def listen(self) -> str | None:
-        """Return the next utterance, "" if nothing usable was heard, None to hang up."""
+    async def listen(self, language: Language | None) -> str | None:
+        """Return the next utterance, "" if nothing usable was heard, None to hang up.
+
+        ``language`` is the call language so far (None = not chosen yet).
+        """
         ...
 
 
 class TextListener:
     """Reads typed (or piped) lines from stdin."""
 
-    async def listen(self) -> str | None:
+    async def listen(self, language: Language | None) -> str | None:
         """Read one line; ``None`` on EOF (Ctrl-D / end of piped input)."""
         try:
             if console.is_terminal:
@@ -66,7 +67,7 @@ class VoiceListener:
         self._stt = stt
         self._fixed_seconds = fixed_seconds
 
-    async def listen(self) -> str | None:
+    async def listen(self, language: Language | None) -> str | None:
         """Capture one utterance (push-to-talk or fixed duration) and return its transcript."""
         try:
             if self._fixed_seconds:
@@ -82,29 +83,32 @@ class VoiceListener:
         if clip.is_silent:
             return ""
         with console.status("Transcribing..."):
-            text = await self._stt.transcribe(clip.wav_bytes)
-        if text:
-            show_user(text)
+            text = await self._stt.transcribe(clip.wav_bytes, language=language)
+        if is_probable_hallucination(text):
+            return ""
+        show_user(text)
         return text
 
 
-async def say(tts: TextToSpeech, text: str) -> None:
-    """Print a line from the agent and speak it."""
+async def say(tts: TextToSpeech, text: str, language: Language | None) -> None:
+    """Print a line from the agent and speak it in the call language's voice."""
     show_agent(text)
-    await tts.speak(text)
+    await tts.speak(text, settings.tts_voice(language))
 
 
 def build_io(args: argparse.Namespace) -> tuple[Listener, TextToSpeech, str]:
     """Pick the input source and speaker for the chosen mode."""
     if args.text:
-        tts: TextToSpeech = EdgeTTS(settings.tts_voice) if args.tts else SilentTTS()
+        tts: TextToSpeech = EdgeTTS() if args.tts else SilentTTS()
         return TextListener(), tts, "text" + (" + tts" if args.tts else "")
 
     recorder = Recorder(sample_rate=settings.sample_rate)
     mic = recorder.check_device()
-    stt = GroqWhisperSTT(api_key=settings.require_groq_key(), model=settings.stt_model)
+    stt = GroqWhisperSTT(
+        api_key=settings.require_groq_key(), model=settings.stt_model, models_by_language={"hi": settings.stt_model_hi}
+    )
     mode = f"voice ({'fixed ' + format(args.duration, 'g') + 's' if args.duration else 'push-to-talk'}, mic: {mic})"
-    return VoiceListener(recorder, stt, args.duration), EdgeTTS(settings.tts_voice), mode
+    return VoiceListener(recorder, stt, args.duration), EdgeTTS(), mode
 
 
 async def run_call(args: argparse.Namespace) -> None:
@@ -114,6 +118,7 @@ async def run_call(args: argparse.Namespace) -> None:
         api_key=settings.require_groq_key(),
         model=settings.llm_model,
         reasoning_effort=settings.reasoning_effort,
+        fallback_model=settings.llm_fallback_model,
     )
     retriever = Retriever()
     if retriever.count() == 0:
@@ -134,43 +139,41 @@ async def run_call(args: argparse.Namespace) -> None:
             tool_server=mcp,
             max_iterations=settings.max_tool_iterations,
             max_history_turns=settings.max_history_turns,
+            require_tool_first=settings.require_tool_first,
         )
+        call = CallSession(orchestrator, language=args.lang)
         show_banner(settings.llm_model, [kb_tool.name, *mcp.tool_names], mode)
-        await say(tts, GREETING)
+        await say(tts, call.opening(), call.language)
 
         while True:
             try:
-                user_text = await listener.listen()
+                user_text = await listener.listen(call.language)
             except Exception as exc:  # noqa: BLE001 - e.g. STT API error; keep the call alive
                 logger.exception("listening failed")
                 show_error(f"{type(exc).__name__}: {exc}")
-                await say(tts, NOT_HEARD)
-                continue
+                user_text = ""
             if user_text is None:
                 break
             if not user_text:
-                await say(tts, NOT_HEARD)
+                await say(tts, call.not_heard, call.language)
                 continue
-            if is_hangup(user_text):
-                break
 
-            try:
-                with console.status("Thinking..."):
-                    result = await orchestrator.run_turn(user_text)
-            except Exception as exc:  # noqa: BLE001 - keep the call alive on API errors
-                logger.exception("turn failed")
-                show_error(f"{type(exc).__name__}: {exc}")
-                await say(tts, RATE_LIMITED if isinstance(exc, RateLimitError) else TURN_FAILED)
-                continue
-            show_turn(result)
-            await tts.speak(result.answer)
+            with console.status("Thinking..."):
+                reply = await call.handle(user_text)
+            if reply.turn:
+                show_turn(reply.turn)
+                await tts.speak(reply.text, settings.tts_voice(reply.language))
+            else:
+                await say(tts, reply.text, reply.language)
+            if reply.ended:
+                return
 
-        await say(tts, GOODBYE)
+        await say(tts, call.goodbye, call.language)  # input ended (EOF) without a hang-up phrase
 
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line flags."""
-    parser = argparse.ArgumentParser(description="NovaTech voice support agent (RAG + MCP).")
+    parser = argparse.ArgumentParser(description="NovaWealth voice investor-support agent (RAG + MCP).")
     parser.add_argument("--text", action="store_true", help="type queries instead of speaking")
     parser.add_argument("--tts", action="store_true", help="in --text mode, also speak the answers")
     parser.add_argument(
@@ -179,6 +182,7 @@ def parse_args() -> argparse.Namespace:
         metavar="SECONDS",
         help="record fixed-length clips instead of push-to-talk",
     )
+    parser.add_argument("--lang", choices=["en", "hi"], help="call language; skips the language question")
     parser.add_argument("--list-devices", action="store_true", help="list audio devices and exit")
     return parser.parse_args()
 
@@ -198,7 +202,7 @@ def main() -> None:
         show_error(str(exc))
         raise SystemExit(1) from exc
     except KeyboardInterrupt:
-        show_agent(GOODBYE)
+        show_agent(LANGUAGES["en"].goodbye)
 
 
 if __name__ == "__main__":

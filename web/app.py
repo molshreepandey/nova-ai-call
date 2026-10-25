@@ -1,11 +1,12 @@
-"""Optional browser UI: the same agent behind a small FastAPI app.
+"""Browser UI: a hands-free voice call with the same agent, served by FastAPI.
 
     python -m web.app          # then open http://127.0.0.1:8000
 
-The browser records the microphone (MediaRecorder) and posts each utterance here.
-The server reuses exactly the CLI's components: Groq Whisper STT, the Orchestrator
-with the local RAG tool + MCP tools, and edge-tts. Each browser tab gets its own
-conversation (session id), so memory works per caller.
+The page detects speech in the browser (voice activity detection), sends each
+utterance here as WAV, and plays back the spoken reply. The server reuses the
+CLI's components: Groq Whisper STT, CallSession + Orchestrator (local RAG tool +
+MCP tools) and edge-tts. Each browser call gets its own session, so language
+choice and conversation memory are per caller.
 """
 
 from __future__ import annotations
@@ -17,23 +18,22 @@ import uuid
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from groq import RateLimitError
 from pydantic import BaseModel
 
+from agent.call import CallReply, CallSession
+from agent.language import Language
 from agent.llm_client import GroqLLMClient
 from agent.mcp_client import MCPClient
-from agent.orchestrator import Orchestrator, TurnResult
-from agent.prompts import GOODBYE, GREETING, is_hangup
+from agent.orchestrator import Orchestrator
 from config import settings, setup_logging
 from rag.retriever import Retriever
 from rag.tool import KnowledgeBaseTool
-from voice.stt import GroqWhisperSTT
+from voice.stt import GroqWhisperSTT, is_probable_hallucination
 from voice.tts import EdgeTTS
 
 logger = logging.getLogger("web")
@@ -44,57 +44,68 @@ MAX_AUDIO_BYTES = 10 * 1024 * 1024
 
 
 class Session:
-    """One caller's conversation; the lock serialises that caller's turns."""
+    """One caller's call; the lock serialises that caller's turns."""
 
-    def __init__(self, orchestrator: Orchestrator) -> None:
-        self.orchestrator = orchestrator
+    def __init__(self, call: CallSession) -> None:
+        self.call = call
         self.lock = asyncio.Lock()
 
 
 class AgentService:
-    """Shared, process-wide components plus per-session orchestrators."""
+    """Process-wide components plus per-call sessions."""
 
     def __init__(self) -> None:
         self.llm = GroqLLMClient(
             api_key=settings.require_groq_key(),
             model=settings.llm_model,
             reasoning_effort=settings.reasoning_effort,
+            fallback_model=settings.llm_fallback_model,
         )
-        self.stt = GroqWhisperSTT(api_key=settings.require_groq_key(), model=settings.stt_model)
-        self.tts = EdgeTTS(settings.tts_voice)
+        self.stt = GroqWhisperSTT(
+            api_key=settings.require_groq_key(),
+            model=settings.stt_model,
+            models_by_language={"hi": settings.stt_model_hi},
+        )
+        self.tts = EdgeTTS()
         self.retriever = Retriever()
         self.kb_tool = KnowledgeBaseTool(self.retriever)
         self.mcp = MCPClient()
         self._sessions: OrderedDict[str, Session] = OrderedDict()
 
-    def session(self, session_id: str) -> Session:
-        """Get or create the session, evicting the least recently used beyond the cap."""
-        if session_id in self._sessions:
-            self._sessions.move_to_end(session_id)
-            return self._sessions[session_id]
-        session = Session(
-            Orchestrator(
-                self.llm,
-                local_tools=[self.kb_tool],
-                tool_server=self.mcp,
-                max_iterations=settings.max_tool_iterations,
-                max_history_turns=settings.max_history_turns,
-            )
+    def create(self) -> tuple[str, Session]:
+        """Start a new call session, evicting the least recently used beyond the cap."""
+        orchestrator = Orchestrator(
+            self.llm,
+            local_tools=[self.kb_tool],
+            tool_server=self.mcp,
+            max_iterations=settings.max_tool_iterations,
+            max_history_turns=settings.max_history_turns,
+            require_tool_first=settings.require_tool_first,
         )
-        self._sessions[session_id] = session
+        session_id = uuid.uuid4().hex
+        self._sessions[session_id] = Session(CallSession(orchestrator))
         if len(self._sessions) > MAX_SESSIONS:
             self._sessions.popitem(last=False)
+        return session_id, self._sessions[session_id]
+
+    def get(self, session_id: str) -> Session:
+        """Look up a live call."""
+        session = self._sessions.get(session_id)
+        if session is None:
+            raise HTTPException(404, "call not found or already ended")
+        self._sessions.move_to_end(session_id)
         return session
 
     def end(self, session_id: str) -> None:
-        """Forget a session (hang up)."""
+        """Forget a call (hang up)."""
         self._sessions.pop(session_id, None)
 
-    async def speech(self, text: str) -> str | None:
-        """MP3 for ``text`` as base64, or None if TTS is unavailable (text still shows)."""
+    async def speech(self, text: str, language: Language | None) -> str | None:
+        """MP3 for ``text`` as base64 in the call language's voice; None if TTS fails."""
         try:
-            return base64.b64encode(await self.tts.synthesize(text)).decode()
-        except Exception as exc:  # noqa: BLE001 - TTS is best-effort
+            mp3 = await self.tts.synthesize_parallel(text, settings.tts_voice(language))
+            return base64.b64encode(mp3).decode()
+        except Exception as exc:  # noqa: BLE001 - TTS is best-effort; text still shows
             logger.warning("[TTS] synthesis failed: %s", exc)
             return None
 
@@ -119,7 +130,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         yield
 
 
-app = FastAPI(title="NovaTech Voice Agent", lifespan=lifespan)
+app = FastAPI(title="NovaWealth Voice Agent", lifespan=lifespan)
 
 
 def _service() -> AgentService:
@@ -128,82 +139,80 @@ def _service() -> AgentService:
     return service
 
 
-class StartResponse(BaseModel):
+class ReplyOut(BaseModel):
+    """What the browser needs to show and play one agent reply."""
+
     session_id: str
-    greeting: str
-    audio: str | None
-
-
-class TurnResponse(BaseModel):
-    transcript: str
-    answer: str
-    tool_calls: list[dict[str, Any]]
-    sources: list[str]
-    audio: str | None
+    transcript: str = ""
+    reply: str = ""
+    language: Language | None = None
+    audio: str | None = None
+    tools: list[str] = []
+    sources: list[str] = []
     ended: bool = False
+    ignored: bool = False
+
+
+async def _reply_out(svc: AgentService, session_id: str, transcript: str, reply: CallReply) -> ReplyOut:
+    turn = reply.turn
+    return ReplyOut(
+        session_id=session_id,
+        transcript=transcript,
+        reply=reply.text,
+        language=reply.language,
+        audio=await svc.speech(reply.text, reply.language),
+        tools=[c.name for c in turn.tool_calls] if turn else [],
+        sources=turn.sources if turn else [],
+        ended=reply.ended,
+    )
 
 
 @app.get("/")
 async def index() -> FileResponse:
-    """The single-page UI."""
+    """The single-page call UI."""
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.post("/api/start")
-async def start() -> StartResponse:
-    """Begin a call: new session plus the spoken greeting."""
+@app.post("/api/call")
+async def start_call() -> ReplyOut:
+    """Begin a call: new session plus the spoken opening (the language question)."""
     svc = _service()
-    session_id = uuid.uuid4().hex
-    svc.session(session_id)
-    return StartResponse(session_id=session_id, greeting=GREETING, audio=await svc.speech(GREETING))
+    session_id, session = svc.create()
+    opening = CallReply(session.call.opening(), session.call.language)
+    return await _reply_out(svc, session_id, "", opening)
 
 
 @app.post("/api/turn")
-async def turn(
-    session_id: str = Form(...),
-    text: str | None = Form(None),
-    audio: UploadFile | None = File(None),
-) -> TurnResponse:
-    """One caller turn from recorded audio (or typed text): STT, agent, TTS."""
+async def turn(session_id: str = Form(...), audio: UploadFile = File(...)) -> ReplyOut:
+    """One caller utterance (WAV from the browser's voice detector): STT, agent, TTS.
+
+    Noise that Whisper turns into nothing or a stock hallucination is reported as
+    ``ignored`` so the browser silently keeps listening instead of re-prompting.
+    """
     svc = _service()
-    if audio is not None:
-        data = await audio.read()
-        if len(data) > MAX_AUDIO_BYTES:
-            raise HTTPException(413, "recording too long")
-        transcript = await svc.stt.transcribe(data, filename=audio.filename or "speech.webm")
-    else:
-        transcript = (text or "").strip()
+    session = svc.get(session_id)
+    data = await audio.read()
+    if len(data) > MAX_AUDIO_BYTES:
+        raise HTTPException(413, "recording too long")
 
-    if not transcript:
-        reply = "Sorry, I didn't catch that. Could you say it again?"
-        return TurnResponse(transcript="", answer=reply, tool_calls=[], sources=[], audio=await svc.speech(reply))
-    if is_hangup(transcript):
-        svc.end(session_id)
-        return TurnResponse(
-            transcript=transcript, answer=GOODBYE, tool_calls=[], sources=[],
-            audio=await svc.speech(GOODBYE), ended=True,
-        )
-
-    session = svc.session(session_id)
     async with session.lock:
+        call = session.call
         try:
-            result: TurnResult = await session.orchestrator.run_turn(transcript)
-        except RateLimitError:
-            result = TurnResult(answer="Sorry, I'm handling a lot of requests right now. Please ask again in a few seconds.")
-        except Exception:
-            logger.exception("turn failed")
-            result = TurnResult(answer="Sorry, I ran into a problem answering that. Could you try again?")
-    return TurnResponse(
-        transcript=transcript,
-        answer=result.answer,
-        tool_calls=[asdict(c) for c in result.tool_calls],
-        sources=result.sources,
-        audio=await svc.speech(result.answer),
-    )
+            transcript = await svc.stt.transcribe(data, filename=audio.filename or "speech.wav", language=call.language)
+        except Exception as exc:  # noqa: BLE001 - STT outage shouldn't end the call
+            logger.warning("[STT] failed: %s", exc)
+            return await _reply_out(svc, session_id, "", CallReply(call.not_heard, call.language))
+        if is_probable_hallucination(transcript):
+            return ReplyOut(session_id=session_id, language=call.language, ignored=True)
+        reply = await call.handle(transcript)
+
+    if reply.ended:
+        svc.end(session_id)
+    return await _reply_out(svc, session_id, transcript, reply)
 
 
 @app.post("/api/end")
-async def end(session_id: str = Form(...)) -> dict[str, str]:
+async def end_call(session_id: str = Form(...)) -> dict[str, Any]:
     """Hang up from the UI."""
     _service().end(session_id)
     return {"status": "ended"}

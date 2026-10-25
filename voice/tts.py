@@ -20,42 +20,53 @@ import soundfile as sf
 
 logger = logging.getLogger(__name__)
 
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+_SENTENCE_END = re.compile(r"(?<=[.!?।])\s+")  # "।" ends Hindi sentences
 
 
 class TextToSpeech(Protocol):
     """Anything that can speak a piece of text aloud."""
 
-    async def speak(self, text: str) -> None:
-        """Synthesize ``text`` and play it, returning when playback ends."""
+    async def speak(self, text: str, voice: str | None = None) -> None:
+        """Synthesize ``text`` (optionally in a specific ``voice``) and play it,
+        returning when playback ends."""
         ...
 
 
 class SilentTTS:
     """No-op TTS for text mode without ``--tts``."""
 
-    async def speak(self, text: str) -> None:
+    async def speak(self, text: str, voice: str | None = None) -> None:
         """Do nothing."""
 
 
 class EdgeTTS:
     """Microsoft Edge neural voices (free, no key) played through the default speaker."""
 
-    def __init__(self, voice: str = "en-US-AriaNeural", rate: str = "+5%") -> None:
+    def __init__(self, voice: str = "en-IN-NeerjaNeural", rate: str = "+0%") -> None:
         self.voice = voice
         self._rate = rate
 
-    async def synthesize(self, text: str) -> bytes:
-        """Return MP3 audio for ``text``."""
+    async def synthesize(self, text: str, voice: str | None = None) -> bytes:
+        """Return MP3 audio for ``text`` in ``voice`` (default: the instance voice)."""
         audio = bytearray()
-        async for chunk in edge_tts.Communicate(text, self.voice, rate=self._rate).stream():
+        async for chunk in edge_tts.Communicate(text, voice or self.voice, rate=self._rate).stream():
             if chunk["type"] == "audio":
                 audio += chunk["data"]
         if not audio:
             raise RuntimeError("edge-tts returned no audio")
         return bytes(audio)
 
-    async def speak(self, text: str) -> None:
+    async def synthesize_parallel(self, text: str, voice: str | None = None) -> bytes:
+        """MP3 for ``text``, synthesizing all sentences concurrently.
+
+        edge-tts returns raw MP3 frames, so per-sentence clips concatenate into one
+        playable file. Latency is roughly the slowest sentence instead of the sum.
+        """
+        sentences = split_sentences(text) or [text]
+        clips = await asyncio.gather(*(self.synthesize(s, voice) for s in sentences))
+        return b"".join(clips)
+
+    async def speak(self, text: str, voice: str | None = None) -> None:
         """Synthesize and play ``text`` sentence by sentence.
 
         The next sentence is synthesized while the current one plays, so speech
@@ -67,12 +78,12 @@ class EdgeTTS:
         if not sentences:
             return
         start = time.perf_counter()
-        pending = asyncio.create_task(self.synthesize(sentences[0]))
+        pending = asyncio.create_task(self.synthesize(sentences[0], voice))
         try:
             for i in range(len(sentences)):
                 mp3 = await pending
                 if i + 1 < len(sentences):
-                    pending = asyncio.create_task(self.synthesize(sentences[i + 1]))
+                    pending = asyncio.create_task(self.synthesize(sentences[i + 1], voice))
                 samples, sample_rate = sf.read(io.BytesIO(mp3), dtype="float32")
                 if i == 0:
                     logger.info("[TTS] first audio after %.0f ms", (time.perf_counter() - start) * 1000)

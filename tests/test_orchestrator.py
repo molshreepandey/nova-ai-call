@@ -38,8 +38,10 @@ class ScriptedLLM:
         self.responses = list(responses)
         self.calls: list[dict[str, Any]] = []
 
-    async def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> LLMResponse:
-        self.calls.append({"messages": [dict(m) for m in messages], "tools": tools})
+    async def complete(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None, tool_choice: str = "auto"
+    ) -> LLMResponse:
+        self.calls.append({"messages": [dict(m) for m in messages], "tools": tools, "tool_choice": tool_choice})
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -211,3 +213,15 @@ def test_duplicate_tool_names_are_rejected() -> None:
 
     with pytest.raises(ValueError, match="both locally and on the MCP server"):
         make(ScriptedLLM(), ClashingMCP())
+
+
+async def test_require_tool_first_only_forces_the_first_step() -> None:
+    llm = ScriptedLLM(tool_step(("search_knowledge_base", {"query": "x"})), answer("grounded"))
+    orch, _, _ = make(llm, require_tool_first=True)
+    await orch.run_turn("question")
+    assert [c["tool_choice"] for c in llm.calls] == ["required", "auto"]
+
+    llm = ScriptedLLM(answer("hi"))
+    orch, _, _ = make(llm)
+    await orch.run_turn("hello")
+    assert llm.calls[0]["tool_choice"] == "auto"

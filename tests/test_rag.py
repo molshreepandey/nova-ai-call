@@ -78,7 +78,7 @@ def test_every_doc_chunks_with_metadata() -> None:
 
 @pytest.fixture
 def kb(tmp_path: Path) -> Retriever:
-    """A temp Chroma collection holding the real NovaTech docs."""
+    """A temp Chroma collection holding the real NovaWealth docs."""
     embedder = HashingEmbedder()
     collection = get_collection(tmp_path / "chroma", "test_kb")
     chunks = [c for p in sorted(DOCS_DIR.glob("*.md")) for c in chunk_document(p)]
@@ -94,10 +94,10 @@ def kb(tmp_path: Path) -> Retriever:
 @pytest.mark.parametrize(
     ("query", "expected_source"),
     [
-        ("X200 standard warranty period months", "warranty_policy.md"),
-        ("return window days delivery", "returns_and_refunds.md"),
-        ("international shipping UAE Singapore", "shipping_faq.md"),
-        ("X200 battery life charging", "product_specs_x200.md"),
+        ("ELSS lock-in Section 80C tax benefit", "mutual_funds.md"),
+        ("KYC documents PAN Aadhaar video KYC", "account_opening_kyc.md"),
+        ("redemption cut-off time credited business days", "sip_and_redemptions.md"),
+        ("PMS fee hurdle rate profit share", "fees_and_charges.md"),
     ],
 )
 def test_retriever_finds_relevant_doc(kb: Retriever, query: str, expected_source: str) -> None:
@@ -123,14 +123,14 @@ def test_rebuild_drops_collection(tmp_path: Path) -> None:
 
 async def test_tool_returns_json_with_sources(kb: Retriever) -> None:
     tool = KnowledgeBaseTool(kb)
-    payload = json.loads(await tool.call({"query": "warranty period", "top_k": 2}))
+    payload = json.loads(await tool.call({"query": "ELSS lock-in", "top_k": 2}))
     assert len(payload["results"]) == 2
     assert {"source", "section", "score", "text"} <= payload["results"][0].keys()
 
 
 async def test_tool_clamps_top_k_and_rejects_empty_query(kb: Retriever) -> None:
     tool = KnowledgeBaseTool(kb)
-    payload = json.loads(await tool.call({"query": "warranty", "top_k": 999}))
+    payload = json.loads(await tool.call({"query": "SIP", "top_k": 999}))
     assert len(payload["results"]) == MAX_TOP_K
     with pytest.raises(ValueError):
         await tool.call({"query": "  "})

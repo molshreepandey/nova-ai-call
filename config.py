@@ -58,18 +58,32 @@ class Settings:
 
     groq_api_key: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
     llm_model: str = field(default_factory=lambda: os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"))
+    # Used automatically while the main model is rate-limited (quotas are per model).
+    llm_fallback_model: str = field(default_factory=lambda: os.getenv("GROQ_FALLBACK_MODEL", "openai/gpt-oss-120b"))
     # Empty = model default. Qwen with "none" skips tools and hallucinates, so it is not
     # the default; "low" is a reasonable choice for openai/gpt-oss-* models.
     reasoning_effort: str = field(default_factory=lambda: os.getenv("GROQ_REASONING_EFFORT", ""))
     stt_model: str = field(default_factory=lambda: os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo"))
-    tts_voice: str = field(default_factory=lambda: os.getenv("TTS_VOICE", "en-US-AriaNeural"))
+    # The full model is noticeably more accurate on Hindi than turbo.
+    stt_model_hi: str = field(default_factory=lambda: os.getenv("GROQ_STT_MODEL_HI", "whisper-large-v3"))
+    tts_voice_en: str = field(default_factory=lambda: os.getenv("TTS_VOICE_EN", "en-IN-NeerjaNeural"))
+    tts_voice_hi: str = field(default_factory=lambda: os.getenv("TTS_VOICE_HI", "hi-IN-SwaraNeural"))
     embedding_model: str = field(default_factory=lambda: os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2"))
-    collection_name: str = "novatech_kb"
+    collection_name: str = "novawealth_kb"
     max_tool_iterations: int = field(default_factory=lambda: _int_env("MAX_TOOL_ITERATIONS", 5))
     max_history_turns: int = field(default_factory=lambda: _int_env("MAX_HISTORY_TURNS", 8))
+    # Every answer must come from a tool result (knowledge base, calculator...).
+    require_tool_first: bool = field(
+        default_factory=lambda: os.getenv("REQUIRE_TOOL_FIRST", "true").lower() not in ("0", "false", "no")
+    )
     rag_top_k: int = field(default_factory=lambda: _int_env("RAG_TOP_K", 4))
     sample_rate: int = field(default_factory=lambda: _int_env("RECORD_SAMPLE_RATE", 16000))
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").upper())
+
+    def tts_voice(self, language: str | None) -> str:
+        """edge-tts voice for a call language; the Hindi voice also reads English well,
+        so it is used for the bilingual language question before a choice is made."""
+        return self.tts_voice_en if language == "en" else self.tts_voice_hi
 
     def require_groq_key(self) -> str:
         """Return the Groq API key or raise a helpful error if it is missing."""
