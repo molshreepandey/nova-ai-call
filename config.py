@@ -22,6 +22,16 @@ LOG_FILE = LOG_DIR / "agent.log"
 
 load_dotenv(ROOT_DIR / ".env")
 
+# Quiet third-party startup noise (progress bars, HF token hints) before those libs load.
+for _var, _value in {
+    "TRANSFORMERS_VERBOSITY": "error",
+    "HF_HUB_VERBOSITY": "error",
+    "HF_HUB_DISABLE_PROGRESS_BARS": "1",
+    "TOKENIZERS_PARALLELISM": "false",
+    "TORCH_CPP_LOG_LEVEL": "ERROR",
+}.items():
+    os.environ.setdefault(_var, _value)
+
 
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
@@ -83,5 +93,8 @@ def setup_logging(level: str | None = None) -> None:
     root.addHandler(file_handler)
 
     # Third-party libraries are chatty at INFO.
-    for noisy in ("httpx", "httpcore", "chromadb", "sentence_transformers", "mcp", "urllib3"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    noisy = ("httpx", "httpcore", "chromadb", "sentence_transformers", "mcp", "urllib3")
+    for name in noisy:
+        logging.getLogger(name).setLevel(logging.WARNING)
+    for name in ("huggingface_hub", "transformers", "filelock", "torch.distributed.elastic"):
+        logging.getLogger(name).setLevel(logging.ERROR)
