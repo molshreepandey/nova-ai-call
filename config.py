@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
+from rich.console import Console
 from rich.logging import RichHandler
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -79,21 +80,22 @@ class Settings:
 settings = Settings()
 
 
-def setup_logging(level: str | None = None) -> None:
+def setup_logging(level: str | None = None, console: Console | None = None) -> None:
     """Configure rich console logging plus a plain-text file log at logs/agent.log.
 
-    The file log is what the MCP ``read_system_log`` tool exposes.
+    The file log is what the MCP ``read_system_log`` tool exposes. Pass the app's
+    ``console`` so log lines and live spinners share one Rich console and don't garble.
     """
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    console = RichHandler(rich_tracebacks=True, show_path=False, markup=True)
-    console.setFormatter(logging.Formatter("%(message)s", datefmt="[%X]"))
+    console_handler = RichHandler(console=console, rich_tracebacks=True, show_path=False, markup=True)
+    console_handler.setFormatter(logging.Formatter("%(message)s", datefmt="[%X]"))
     file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
     file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
 
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(level or settings.log_level)
-    root.addHandler(console)
+    root.addHandler(console_handler)
     root.addHandler(file_handler)
 
     # Third-party libraries are chatty at INFO.
