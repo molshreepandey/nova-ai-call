@@ -29,6 +29,7 @@ Nova: I can only help with NovaWealth and investment questions, ...
 - [Design decisions and trade-offs](#design-decisions-and-trade-offs)
 - [Setup](#setup)
 - [Running](#running)
+- [Deploying to AWS](#deploying-to-aws)
 - [Environment variables](#environment-variables)
 - [Example queries](#example-queries)
 - [Tests](#tests)
@@ -58,7 +59,7 @@ Nova: I can only help with NovaWealth and investment questions, ...
   fallback model. Tool errors go back to the LLM, looping answers are cut, and calls never crash.
 - **Side-panel transcript** of everything said on the call, with cited sources.
 - Terminal mode too (`python main.py`): push-to-talk, or `--text` for typing.
-- **132 offline tests.**
+- **137 offline tests.**
 
 ## High-level design
 
@@ -284,6 +285,21 @@ The pinned `tzdata` package provides time zones on Windows.
 
 End a call with **"goodbye"**, **"end call"**, **"अलविदा"** or **"कॉल खत्म"**, or press **End call**.
 
+## Deploying to AWS
+
+The app runs live on one small Ubuntu server (AWS Lightsail or EC2). A single script installs it,
+runs it as a service, and serves it over **HTTPS** with Caddy; HTTPS is required for browser
+microphone access. Step-by-step guide: [`deploy/README.md`](deploy/README.md).
+
+```bash
+# on the server
+curl -fsSL https://raw.githubusercontent.com/molshreepandey/nova-ai-call/main/deploy/setup.sh -o setup.sh
+sudo bash setup.sh
+```
+
+Set `ACCESS_CODE` (the script asks for it) when the URL is public, so only people with the code
+can start calls and use your Groq quota.
+
 ## Environment variables
 
 | Name | Required | Default | Description |
@@ -302,6 +318,8 @@ End a call with **"goodbye"**, **"end call"**, **"अलविदा"** or **"�
 | `RAG_TOP_K` | no | `4` | Chunks per search. |
 | `RECORD_SAMPLE_RATE` | no | `16000` | Terminal-mode recording rate. |
 | `LOG_LEVEL` | no | `INFO` | `DEBUG` shows token usage per call. |
+| `ACCESS_CODE` | no | *(empty)* | If set, the web page asks for this code before a call starts. |
+| `HOST` / `PORT` | no | `127.0.0.1` / `8000` | Web server bind address. |
 
 ## Example queries
 
@@ -319,7 +337,7 @@ End a call with **"goodbye"**, **"end call"**, **"अलविदा"** or **"�
 ## Tests
 
 ```bash
-python -m pytest -q          # 132 tests, about 1 s, no network or API key needed
+python -m pytest -q          # 137 tests, about 1 s, no network or API key needed
 ```
 
 Covers: the language state machine and detection (including Devanagari), hang-ups in both
@@ -352,6 +370,7 @@ were detected, answered and correctly interrupted Nova (barge-in).
 ├── mcp_server/              # server.py, finance.py, calculator.py
 ├── voice/                   # stt.py, tts.py, recorder.py
 ├── data/docs/               # 6 NovaWealth documents
+├── deploy/                  # AWS setup script + guide
 ├── docs/hld.mmd, hld.png
 └── tests/
 ```

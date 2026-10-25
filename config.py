@@ -79,6 +79,11 @@ class Settings:
     rag_top_k: int = field(default_factory=lambda: _int_env("RAG_TOP_K", 4))
     sample_rate: int = field(default_factory=lambda: _int_env("RECORD_SAMPLE_RATE", 16000))
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").upper())
+    # Web UI: bind address, and an optional shared code required to start calls
+    # (protects the Groq quota when the site is public).
+    web_host: str = field(default_factory=lambda: os.getenv("HOST", "127.0.0.1"))
+    web_port: int = field(default_factory=lambda: _int_env("PORT", 8000))
+    access_code: str = field(default_factory=lambda: os.getenv("ACCESS_CODE", ""))
 
     def tts_voice(self, language: str | None) -> str:
         """edge-tts voice for a call language; the Hindi voice also reads English well,

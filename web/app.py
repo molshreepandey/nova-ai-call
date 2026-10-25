@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import secrets
 import uuid
 from collections import OrderedDict
 from collections.abc import AsyncIterator
@@ -21,7 +22,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -126,11 +127,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         raise RuntimeError("The knowledge base is empty. Run `python -m rag.ingest` first.")
     async with service.mcp:
         await asyncio.to_thread(service.retriever.warm_up)
-        logger.info("[WEB] ready on http://127.0.0.1:8000")
+        logger.info("[WEB] ready on http://%s:%d", settings.web_host, settings.web_port)
         yield
 
 
 app = FastAPI(title="NovaWealth Voice Agent", lifespan=lifespan)
+
+
+def require_access(x_access_code: str | None = Header(default=None)) -> None:
+    """Reject API calls without the shared access code, when one is configured."""
+    expected = settings.access_code
+    if expected and not secrets.compare_digest((x_access_code or "").encode(), expected.encode()):
+        raise HTTPException(401, "invalid access code")
 
 
 def _service() -> AgentService:
@@ -173,7 +181,13 @@ async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
-@app.post("/api/call")
+@app.get("/api/config")
+async def client_config() -> dict[str, bool]:
+    """What the page needs to know before starting a call."""
+    return {"access_code_required": bool(settings.access_code)}
+
+
+@app.post("/api/call", dependencies=[Depends(require_access)])
 async def start_call() -> ReplyOut:
     """Begin a call: new session plus the spoken opening (the language question)."""
     svc = _service()
@@ -182,7 +196,7 @@ async def start_call() -> ReplyOut:
     return await _reply_out(svc, session_id, "", opening)
 
 
-@app.post("/api/turn")
+@app.post("/api/turn", dependencies=[Depends(require_access)])
 async def turn(session_id: str = Form(...), audio: UploadFile = File(...)) -> ReplyOut:
     """One caller utterance (WAV from the browser's voice detector): STT, agent, TTS.
 
@@ -211,7 +225,7 @@ async def turn(session_id: str = Form(...), audio: UploadFile = File(...)) -> Re
     return await _reply_out(svc, session_id, transcript, reply)
 
 
-@app.post("/api/end")
+@app.post("/api/end", dependencies=[Depends(require_access)])
 async def end_call(session_id: str = Form(...)) -> dict[str, Any]:
     """Hang up from the UI."""
     _service().end(session_id)
@@ -221,4 +235,4 @@ async def end_call(session_id: str = Form(...)) -> dict[str, Any]:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("web.app:app", host="127.0.0.1", port=8000)
+    uvicorn.run("web.app:app", host=settings.web_host, port=settings.web_port, proxy_headers=True)

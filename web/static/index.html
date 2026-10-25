@@ -172,6 +172,7 @@ const $ = (id) => document.getElementById(id);
 const ui = { state: $("state"), hint: $("hint"), btn: $("callBtn"), pill: $("callPill"), lang: $("lang"),
              transcript: $("transcript"), empty: $("empty"), orb: $("orb") };
 
+let accessCode = null;         // shared code, only when the server requires one
 let mode = "idle";            // idle | connecting | listening | hearing | thinking | speaking
 let sessionId = null, language = null, callStart = 0, timer = null;
 let micStream = null, micCtx = null, micNode = null, sileroVad = null, frameRate = 16000;
@@ -245,8 +246,33 @@ function addEntry(who, text, sources) {
 }
 
 // ---------- Call lifecycle ----------
+function api(path, body) {
+  const headers = accessCode ? { "X-Access-Code": accessCode } : {};
+  return fetch(path, { method: "POST", body, headers });
+}
+
+async function ensureAccessCode() {
+  const cfg = await (await fetch("/api/config")).json();
+  if (!cfg.access_code_required) return true;
+  try { accessCode = accessCode || localStorage.getItem("novaAccessCode"); } catch {}
+  if (!accessCode) accessCode = (window.prompt("Enter the access code for this demo") || "").trim();
+  return Boolean(accessCode);
+}
+
+function forgetAccessCode() {
+  accessCode = null;
+  try { localStorage.removeItem("novaAccessCode"); } catch {}
+}
+
 async function startCall() {
   ui.btn.disabled = true;
+  try {
+    if (!(await ensureAccessCode())) { ui.btn.disabled = false; return; }
+  } catch {
+    ui.hint.textContent = "Could not reach the agent. Is the server running?";
+    ui.btn.disabled = false;
+    return;
+  }
   setMode("connecting");
   try {
     await openAudio();
@@ -260,8 +286,15 @@ async function startCall() {
   ui.empty.hidden = false;
   setLanguage(null);
   try {
-    const res = await fetch("/api/call", { method: "POST" });
+    const res = await api("/api/call");
+    if (res.status === 401) {
+      forgetAccessCode(); closeAudio(); setMode("idle");
+      ui.hint.textContent = "That access code isn't valid. Press Start call to try again.";
+      ui.btn.disabled = false;
+      return;
+    }
     if (!res.ok) throw new Error(res.statusText);
+    try { localStorage.setItem("novaAccessCode", accessCode || ""); } catch {}
     const data = await res.json();
     sessionId = data.session_id;
     callStart = Date.now(); clock(); timer = setInterval(clock, 1000);
@@ -278,7 +311,7 @@ async function startCall() {
 function endCall(notifyServer = true) {
   if (notifyServer && sessionId) {
     const form = new FormData(); form.append("session_id", sessionId);
-    fetch("/api/end", { method: "POST", body: form }).catch(() => {});
+    api("/api/end", form).catch(() => {});
   }
   sessionId = null;
   player.pause();
@@ -320,7 +353,7 @@ async function sendUtterance(samples, sampleRate) {
   form.append("session_id", sessionId);
   form.append("audio", encodeWav(samples, sampleRate), "speech.wav");
   try {
-    const res = await fetch("/api/turn", { method: "POST", body: form });
+    const res = await api("/api/turn", form);
     pending.remove();
     if (res.status === 404) { endCall(false); return; }
     if (!res.ok) throw new Error(res.statusText);

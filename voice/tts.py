@@ -15,7 +15,6 @@ from typing import Protocol
 
 import edge_tts
 import numpy as np
-import sounddevice as sd
 import soundfile as sf
 
 logger = logging.getLogger(__name__)
@@ -106,5 +105,9 @@ def split_sentences(text: str, min_chars: int = 20) -> list[str]:
 
 
 def _play_blocking(samples: np.ndarray, sample_rate: int) -> None:
+    # Imported here: only local playback needs PortAudio, so servers that just
+    # synthesize audio for a browser (web/app.py) don't need audio devices at all.
+    import sounddevice as sd
+
     sd.play(samples, sample_rate)
     sd.wait()
