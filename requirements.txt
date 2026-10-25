@@ -16,6 +16,11 @@ sounddevice==0.5.6
 soundfile==0.14.0
 numpy==2.5.4
 
+# Optional web UI (web/)
+fastapi==0.162.0
+uvicorn==0.54.0
+python-multipart==0.0.32
+
 # HTTP, config, terminal output
 httpx==0.28.1
 tzdata==2026.5  # IANA timezones for zoneinfo on Windows (no system tz database)

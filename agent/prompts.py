@@ -31,3 +31,9 @@ GOODBYE = "Thanks for calling NovaTech. Have a great day, goodbye!"
 
 # Phrases (lower-case, matched as substrings of the normalised transcript) that end the call.
 HANGUP_PHRASES: tuple[str, ...] = ("goodbye", "good bye", "end call", "end the call", "hang up", "bye bye")
+
+
+def is_hangup(text: str) -> bool:
+    """True if the caller asked to end the call."""
+    normalised = " ".join(text.lower().replace(".", " ").replace("!", " ").replace(",", " ").split())
+    return any(phrase in normalised for phrase in HANGUP_PHRASES)

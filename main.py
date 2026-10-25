@@ -19,7 +19,7 @@ from groq import RateLimitError
 from agent.llm_client import GroqLLMClient
 from agent.mcp_client import MCPClient
 from agent.orchestrator import Orchestrator
-from agent.prompts import GOODBYE, GREETING, HANGUP_PHRASES
+from agent.prompts import GOODBYE, GREETING, is_hangup
 from config import ConfigError, settings, setup_logging
 from display import console, show_agent, show_banner, show_error, show_turn, show_user
 from rag.retriever import Retriever
@@ -86,12 +86,6 @@ class VoiceListener:
         if text:
             show_user(text)
         return text
-
-
-def is_hangup(text: str) -> bool:
-    """True if the caller asked to end the call."""
-    normalised = " ".join(text.lower().replace(".", " ").replace("!", " ").replace(",", " ").split())
-    return any(phrase in normalised for phrase in HANGUP_PHRASES)
 
 
 async def say(tts: TextToSpeech, text: str) -> None:

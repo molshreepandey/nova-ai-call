@@ -54,6 +54,8 @@ Sources: warranty_policy.md § Standard Warranty Periods
 - 🛡️ **Robust loop**: max 5 tool iterations then a forced answer, tool errors are fed back to
   the LLM instead of crashing, history is rolled back on API failure, a friendly message on rate limits.
 - 🗣️ **Voice-first answers**: 2–4 spoken sentences; sources are cited **on screen**, never read aloud.
+- 🌐 **Optional web UI** (`python -m web.app`): call button, browser mic, chat transcript,
+  tool trace and spoken replies, all driven by the same orchestrator.
 - ✅ **90 offline tests** (fake LLM, fake embedder, mocked HTTP, real stdio MCP round-trip).
 
 ## High-level design
@@ -320,9 +322,23 @@ Windows has no system timezone database; the pinned `tzdata` package provides it
 | `python main.py --list-devices` | List audio input/output devices. |
 | `python -m rag.ingest [--rebuild]` | (Re)build the knowledge base. Re-running is idempotent; `--rebuild` drops and recreates it. |
 | `python -m mcp_server.server` | Run the MCP server on its own (e.g. with `npx @modelcontextprotocol/inspector`). |
+| `python -m web.app` | Optional web UI at http://127.0.0.1:8000 (see below). |
 
 Say **"goodbye"**, **"end call"** or **"hang up"** to end the call, or press Ctrl+C.
 Piped input works too: `printf "What's your return window?\ngoodbye\n" | python main.py --text`.
+
+### Optional web UI
+
+```bash
+python -m web.app        # open http://127.0.0.1:8000, click "Call", allow the microphone
+```
+
+A single-page FastAPI app (`web/app.py` + `web/static/index.html`, no build step). The browser
+records each utterance with `MediaRecorder` (WebM/Opus) and posts it to `/api/turn`. The
+server reuses the **same** Groq Whisper STT, Orchestrator (RAG + MCP) and edge-tts as the CLI,
+and returns the transcript, answer, tool trace, sources and MP3 audio. Each tab gets its own
+session, so conversation memory works per caller. You can also type, and clicking Talk while
+Nova is speaking stops playback. Endpoints: `POST /api/start`, `POST /api/turn`, `POST /api/end`.
 
 ## Environment variables
 
@@ -401,6 +417,9 @@ voice-agent/
 │   ├── recorder.py          # sounddevice capture
 │   ├── stt.py               # Groq Whisper
 │   └── tts.py               # edge-tts + playback
+├── web/
+│   ├── app.py               # optional FastAPI UI (python -m web.app)
+│   └── static/index.html    # single-page call UI
 ├── data/docs/               # 6 NovaTech markdown documents
 ├── docs/hld.mmd, hld.png    # architecture diagram
 ├── tests/                   # pytest suite

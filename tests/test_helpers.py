@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from agent.llm_client import _parse_arguments, _strip_reasoning
-from main import is_hangup
+from agent.prompts import is_hangup
 from voice.recorder import Recorder
 from voice.tts import split_sentences
 

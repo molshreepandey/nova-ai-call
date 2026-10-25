@@ -16,10 +16,11 @@ VOCABULARY_HINT = "NovaTech support call about the NovaBand X200, NovaHub, NovaF
 
 
 class SpeechToText(Protocol):
-    """Anything that turns a WAV clip into text."""
+    """Anything that turns recorded audio into text."""
 
-    async def transcribe(self, wav_bytes: bytes) -> str:
-        """Return the transcript of ``wav_bytes`` (may be empty)."""
+    async def transcribe(self, audio: bytes, filename: str = "speech.wav") -> str:
+        """Return the transcript of ``audio`` (may be empty). ``filename``'s extension
+        tells the provider the container format (wav, webm, ogg, mp3...)."""
         ...
 
 
@@ -31,11 +32,11 @@ class GroqWhisperSTT:
         self.model = model
         self._language = language
 
-    async def transcribe(self, wav_bytes: bytes) -> str:
+    async def transcribe(self, audio: bytes, filename: str = "speech.wav") -> str:
         """Send the clip to Groq Whisper and return the stripped transcript."""
         start = time.perf_counter()
         result = await self._client.audio.transcriptions.create(
-            file=("speech.wav", wav_bytes),
+            file=(filename, audio),
             model=self.model,
             language=self._language,
             prompt=VOCABULARY_HINT,

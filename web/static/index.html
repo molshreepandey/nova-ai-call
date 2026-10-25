@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NovaTech Support Call</title>
+<style>
+  :root {
+    --bg: #f6f7fb; --panel: #ffffff; --text: #1d2433; --muted: #6b7385; --border: #e3e6ee;
+    --accent: #4f46e5; --accent-text: #ffffff; --user: #e8f0fe; --agent: #f3f0ff;
+    --rag: #2e7d32; --mcp: #00838f; --danger: #d93025; --ok: #188038;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12141a; --panel: #1b1e27; --text: #e6e8ee; --muted: #9aa1b2; --border: #2c303c;
+      --accent: #8b85ff; --accent-text: #12141a; --user: #1f2a44; --agent: #2a2342;
+      --rag: #7bd389; --mcp: #5fd4e0; --danger: #ff6b6b; --ok: #6fd08c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 24px 16px 140px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  #log { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { padding: 10px 14px; border-radius: 12px; max-width: 85%; border: 1px solid var(--border); }
+  .msg.user { background: var(--user); align-self: flex-end; }
+  .msg.agent { background: var(--agent); align-self: flex-start; }
+  .msg .who { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+  .trace { margin-top: 8px; font-size: 12px; color: var(--muted); overflow-x: auto; }
+  .trace table { border-collapse: collapse; width: 100%; margin-top: 4px; }
+  .trace td { padding: 3px 6px; border-top: 1px solid var(--border); vertical-align: top;
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+  .trace td.args { white-space: normal; overflow-wrap: anywhere; min-width: 12ch; }
+  .tag { font-weight: 700; }
+  .tag.local { color: var(--rag); } .tag.mcp { color: var(--mcp); }
+  .ok { color: var(--ok); } .fail { color: var(--danger); }
+  .sources { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel);
+           border-top: 1px solid var(--border); padding: 12px 16px; }
+  .controls { max-width: 820px; margin: 0 auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; border-radius: 999px; border: 1px solid var(--border); padding: 10px 18px;
+           background: var(--panel); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.recording { background: var(--danger); color: #fff; border-color: var(--danger); }
+  button:disabled { opacity: .5; cursor: default; }
+  form { display: flex; flex: 1; gap: 8px; min-width: 220px; }
+  input[type=text] { flex: 1; min-width: 0; font: inherit; padding: 10px 14px; border-radius: 999px;
+                     border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  #status { width: 100%; font-size: 12px; color: var(--muted); max-width: 820px; margin: 6px auto 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>NovaTech Support</h1>
+    <p>Voice agent with a RAG knowledge base and MCP system tools. Press <b>Call</b>, then click the mic to talk.</p>
+  </header>
+  <div id="log" aria-live="polite"></div>
+</main>
+<footer>
+  <div class="controls">
+    <button id="call" class="primary">📞 Call</button>
+    <button id="mic" disabled>🎙️ Talk</button>
+    <form id="textForm">
+      <input id="text" type="text" placeholder="…or type a question" disabled autocomplete="off">
+      <button id="send" type="submit" disabled>Send</button>
+    </form>
+  </div>
+  <div id="status">Not in a call.</div>
+</footer>
+<script>
+const $ = (id) => document.getElementById(id);
+const log = $("log"), statusEl = $("status");
+let sessionId = null, recorder = null, chunks = [], stream = null, busy = false;
+const player = new Audio();
+
+function setStatus(text) { statusEl.textContent = text; }
+function setInCall(inCall) {
+  $("call").textContent = inCall ? "End call" : "📞 Call";
+  $("call").classList.toggle("primary", !inCall);
+  for (const id of ["mic", "text", "send"]) $(id).disabled = !inCall;
+}
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;   // textContent: never inject HTML
+  return node;
+}
+
+function addMessage(who, text, result) {
+  const box = el("div", `msg ${who}`);
+  box.append(el("div", "who", who === "user" ? "You" : "Nova"), el("div", "", text));
+  if (result && result.tool_calls && result.tool_calls.length) {
+    const trace = el("div", "trace", "Tool calls");
+    const table = el("table");
+    for (const call of result.tool_calls) {
+      const row = table.insertRow();
+      const via = el("span", `tag ${call.provider}`, call.provider === "local" ? "RAG" : "MCP");
+      row.insertCell().append(via);
+      row.insertCell().textContent = call.name;
+      const args = row.insertCell();
+      args.className = "args";
+      args.textContent = JSON.stringify(call.arguments);
+      row.insertCell().textContent = `${call.duration_ms} ms`;
+      row.insertCell().append(el("span", call.ok ? "ok" : "fail", call.ok ? "✓" : "✗"));
+    }
+    trace.append(table);
+    box.append(trace);
+  }
+  if (result && result.sources && result.sources.length) {
+    box.append(el("div", "sources", "Sources: " + result.sources.join("; ")));
+  }
+  log.append(box);
+  box.scrollIntoView({ behavior: "smooth", block: "end" });
+}
+
+async function play(b64) {
+  if (!b64) return;
+  player.src = "data:audio/mpeg;base64," + b64;
+  try { await player.play(); } catch (e) { console.warn("autoplay blocked", e); }
+}
+
+async function startCall() {
+  setStatus("Connecting…");
+  const res = await fetch("/api/start", { method: "POST" });
+  if (!res.ok) { setStatus("Could not start the call."); return; }
+  const data = await res.json();
+  sessionId = data.session_id;
+  setInCall(true);
+  addMessage("agent", data.greeting);
+  setStatus("In call. Click 🎙️ Talk, ask your question, then click again to send.");
+  play(data.audio);
+}
+
+async function endCall() {
+  stopStream();
+  if (sessionId) {
+    const form = new FormData(); form.append("session_id", sessionId);
+    fetch("/api/end", { method: "POST", body: form });
+  }
+  sessionId = null; setInCall(false); setStatus("Call ended.");
+}
+
+async function sendTurn(form) {
+  if (busy) return;
+  busy = true; $("mic").disabled = true; $("send").disabled = true;
+  setStatus("Thinking…");
+  form.append("session_id", sessionId);
+  try {
+    const res = await fetch("/api/turn", { method: "POST", body: form });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (data.transcript) addMessage("user", data.transcript);
+    addMessage("agent", data.answer, data);
+    play(data.audio);
+    if (data.ended) { sessionId = null; setInCall(false); setStatus("Call ended."); return; }
+    setStatus("In call.");
+  } catch (e) {
+    setStatus("Something went wrong: " + e.message);
+  } finally {
+    busy = false;
+    if (sessionId) { $("mic").disabled = false; $("send").disabled = false; }
+  }
+}
+
+function stopStream() {
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null;
+}
+
+async function toggleRecording() {
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+  player.pause();   // barge-in lite: stop the agent talking when the caller talks
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    setStatus("Microphone blocked. Allow mic access for this page (or type instead).");
+    return;
+  }
+  const mime = ["audio/webm", "audio/ogg", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+  recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  chunks = [];
+  recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  recorder.onstop = () => {
+    stopStream();
+    $("mic").classList.remove("recording"); $("mic").textContent = "🎙️ Talk";
+    const type = recorder.mimeType || "audio/webm";
+    const ext = type.includes("ogg") ? "ogg" : type.includes("mp4") ? "m4a" : "webm";
+    const form = new FormData();
+    form.append("audio", new Blob(chunks, { type }), `speech.${ext}`);
+    sendTurn(form);
+  };
+  recorder.start();
+  $("mic").classList.add("recording"); $("mic").textContent = "■ Stop & send";
+  setStatus("Listening… click again when you're done.");
+}
+
+$("call").onclick = () => (sessionId ? endCall() : startCall());
+$("mic").onclick = toggleRecording;
+$("textForm").onsubmit = (e) => {
+  e.preventDefault();
+  const text = $("text").value.trim();
+  if (!text || !sessionId) return;
+  $("text").value = "";
+  const form = new FormData(); form.append("text", text);
+  sendTurn(form);
+};
+</script>
+</body>
+</html>
