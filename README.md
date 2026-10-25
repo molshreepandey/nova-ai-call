@@ -19,12 +19,6 @@ Nova: Yes, it's still covered. Your X200 has a 12-month, or 365-day, standard wa
 Sources: warranty_policy.md § Standard Warranty Periods
 ```
 
-## Demo
-
-> 📹 _Demo video / GIF goes here_ (e.g. `docs/demo.gif`)
->
-> 🖼️ _Screenshot of a call in the terminal goes here_ (e.g. `docs/screenshot.png`)
-
 ## Contents
 
 - [Features](#features)
