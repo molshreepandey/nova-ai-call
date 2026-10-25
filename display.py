@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
 from agent.orchestrator import TurnResult
+from config import LOG_THEME
 
-console = Console()
+console = Console(theme=LOG_THEME)
 
 
 def show_banner(model: str, tools: list[str], mode: str) -> None:
@@ -27,12 +29,12 @@ def show_banner(model: str, tools: list[str], mode: str) -> None:
 
 def show_user(text: str) -> None:
     """Print what the caller said (or typed)."""
-    console.print(f"\n[bold green]You:[/] {text}")
+    console.print(f"\n[bold green]You:[/] {escape(text)}")
 
 
 def show_agent(text: str) -> None:
     """Print a line spoken by the agent outside a normal turn (greeting, goodbye)."""
-    console.print(f"[bold magenta]Nova:[/] {text}")
+    console.print(f"[bold magenta]Nova:[/] {escape(text)}")
 
 
 def show_turn(result: TurnResult) -> None:
@@ -50,7 +52,7 @@ def show_turn(result: TurnResult) -> None:
                 str(i),
                 call.name,
                 "RAG" if call.provider == "local" else call.provider.upper(),
-                json.dumps(call.arguments, ensure_ascii=False),
+                escape(json.dumps(call.arguments, ensure_ascii=False)),
                 str(call.duration_ms),
                 "[green]✓[/]" if call.ok else "[red]✗[/]",
             )
@@ -58,11 +60,11 @@ def show_turn(result: TurnResult) -> None:
     else:
         console.print("[dim](no tools used)[/]")
 
-    console.print(f"[bold magenta]Nova:[/] {result.answer}")
+    console.print(f"[bold magenta]Nova:[/] {escape(result.answer)}")
     if result.sources:
-        console.print("[dim]Sources: " + "; ".join(result.sources) + "[/]")
+        console.print("[dim]Sources: " + escape("; ".join(result.sources)) + "[/]")
 
 
 def show_error(message: str) -> None:
     """Print a non-fatal error."""
-    console.print(f"[bold red]Error:[/] {message}")
+    console.print(f"[bold red]Error:[/] {escape(message)}")

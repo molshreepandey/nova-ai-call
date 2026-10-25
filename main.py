@@ -14,6 +14,8 @@ import logging
 from contextlib import AsyncExitStack
 from typing import Protocol
 
+from groq import RateLimitError
+
 from agent.llm_client import GroqLLMClient
 from agent.mcp_client import MCPClient
 from agent.orchestrator import Orchestrator
@@ -30,6 +32,7 @@ logger = logging.getLogger("main")
 
 NOT_HEARD = "Sorry, I didn't catch that. Could you say it again?"
 TURN_FAILED = "Sorry, I ran into a problem answering that. Could you try again?"
+RATE_LIMITED = "Sorry, I'm handling a lot of requests right now. Please ask me again in a few seconds."
 
 
 class Listener(Protocol):
@@ -119,6 +122,8 @@ async def run_call(args: argparse.Namespace) -> None:
         reasoning_effort=settings.reasoning_effort,
     )
     retriever = Retriever()
+    if retriever.count() == 0:
+        raise ConfigError("The knowledge base is empty. Run `python -m rag.ingest` first.")
     kb_tool = KnowledgeBaseTool(retriever)
 
     # The MCP session must be opened and closed in this task (anyio cancel scopes), so
@@ -161,7 +166,7 @@ async def run_call(args: argparse.Namespace) -> None:
             except Exception as exc:  # noqa: BLE001 - keep the call alive on API errors
                 logger.exception("turn failed")
                 show_error(f"{type(exc).__name__}: {exc}")
-                await say(tts, TURN_FAILED)
+                await say(tts, RATE_LIMITED if isinstance(exc, RateLimitError) else TURN_FAILED)
                 continue
             show_turn(result)
             await tts.speak(result.answer)

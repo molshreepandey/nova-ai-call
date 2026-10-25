@@ -28,6 +28,10 @@ class Retriever:
         self._embedder = embedder or Embedder(settings.embedding_model)
         self._collection = collection or get_collection(CHROMA_DIR, settings.collection_name)
 
+    def count(self) -> int:
+        """Number of chunks in the knowledge base."""
+        return self._collection.count()
+
     def warm_up(self) -> None:
         """Load the embedding model now instead of on the first query."""
         self._embedder.embed(["warm up"])
